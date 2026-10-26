@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Me Salva</title>
+  <meta name="description" content="Plataforma que conecta pacientes e famílias a profissionais de saúde mental verificados, com triagem guiada e vagas sociais.">
+  <meta name="theme-color" content="#1E4D40">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Roboto+Slab:wght@700;800;900&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="/js/theme.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <div class="shell bare" id="shell">
+    <aside class="side" id="side" aria-label="Menu principal"></aside>
+    <div class="main">
+      <div class="screen" id="screen"><div class="loading" role="status"><span class="spin"></span><span>Carregando…</span></div></div>
+      <nav class="tabbar" id="tabbar" aria-label="Navegação principal" hidden></nav>
+    </div>
+  </div>
+  <div class="layer" id="layer"></div>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <noscript>O Me Salva precisa de JavaScript para funcionar.</noscript>
+</body>
+</html>

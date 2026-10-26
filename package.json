@@ -1,0 +1,17 @@
+{
+  "name": "me-salva-mvp",
+  "version": "0.1.0",
+  "description": "MVP da plataforma Me Salva: conecta pacientes e famílias a profissionais de saúde mental, com triagem guiada, emparelhamento e vagas sociais.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --env-file-if-exists=.env --watch --disable-warning=ExperimentalWarning server.js",
+    "seed": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/seed.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "license": "MIT"
+}

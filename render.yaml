@@ -1,0 +1,17 @@
+# Configuração para publicar no Render (plano gratuito).
+services:
+  - type: web
+    name: me-salva
+    runtime: node
+    plan: free
+    buildCommand: node --version
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DEMO_MODE
+        value: "true"
+      - key: NODE_ENV
+        value: production
+      - key: NOTES_KEY
+        generateValue: true

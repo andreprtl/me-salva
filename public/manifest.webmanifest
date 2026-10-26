@@ -1,0 +1,11 @@
+{
+  "name": "Me Salva",
+  "short_name": "Me Salva",
+  "description": "Conecta pacientes e famílias a profissionais de saúde mental verificados.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF9F3",
+  "theme_color": "#1E4D40",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

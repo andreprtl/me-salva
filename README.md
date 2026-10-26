@@ -29,8 +29,8 @@ Projeto da disciplina **Empreendedorismo em Informática** (USP). Os dados de de
 Pré-requisito: **Node.js 22.13 ou mais recente** ([nodejs.org](https://nodejs.org)). O projeto não tem dependências externas: não é preciso rodar `npm install`.
 
 ```bash
-git clone https://github.com/SEU-USUARIO/me-salva-mvp.git
-cd me-salva-mvp
+git clone https://github.com/andreprtl/me-salva
+cd me-salva
 npm start
 ```
 

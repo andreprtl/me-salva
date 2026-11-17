@@ -2,9 +2,10 @@
 import {
   S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, refresh, top, every, openLayer, closeLayer,
   confirmSheet, toast, esc, ic, logoMark, avatar, stars, backBtn, brl, brl2, nota, km, when, dayLabel, dateBox,
-  DOW, DOWL, MES, areaName, toggle, copyText, $,
+  DOW, DOWL, MES, areaName, toggle, copyText, $, bellBtn, countBadge,
 } from '../core.js';
 import { wide } from './common.js';
+import { notifyInvite } from './notifications.js';
 
 // Filtros da busca (S.f), mantidos enquanto o paciente navega.
 const freshFilters = () => ({ area: null, q: '', modality: 'todos', max: 300, social: false, sort: 'rel' });
@@ -31,10 +32,11 @@ screen('home', {
     return `<div class="topbar gut only-m">
       <button class="icon-btn plain" data-a="drawer" aria-label="Abrir menu">${ic('menu')}</button>
       <div class="brand-mini">${logoMark(30)}ME SALVA</div>
-      <button class="icon-btn plain" data-a="tab" data-v="chats" aria-label="Mensagens">${ic('chat')}${S.unread ? `<span class="badge">${S.unread}</span>` : ''}</button>
+      ${bellBtn()}
+      <button class="icon-btn plain" data-a="tab" data-v="chats" aria-label="Mensagens">${ic('chat')}${countBadge('msg', 'badge')}</button>
       <button class="me-av" data-a="tab" data-v="config" aria-label="Minha conta">${esc(first[0])}</button>
     </div>
-    <header class="bar gut only-d"><div class="bar-t"><div class="eyebrow">${DOWL[now.getDay()]}, ${now.getDate()} de ${MES[now.getMonth()]}</div><h1 class="h1">Olá, ${esc(first)}</h1></div><button class="btn btn-ghost btn-sm" data-a="tab" data-v="chats">${ic('chat')}Mensagens${S.unread ? ` (${S.unread})` : ''}</button></header>
+    <header class="bar gut only-d"><div class="bar-t"><div class="eyebrow">${DOWL[now.getDay()]}, ${now.getDate()} de ${MES[now.getMonth()]}</div><h1 class="h1">Olá, ${esc(first)}</h1></div><button class="btn btn-ghost btn-sm" data-a="tab" data-v="chats">${ic('chat')}Mensagens${countBadge('msg', 'btn-count')}</button></header>
     <main class="scroll gut">
       <div class="home-grid">
         <section class="hero">${logoMark(84)}
@@ -78,7 +80,7 @@ A.short = (el) => {
 // Escolha da área antes da lista de profissionais.
 screen('areas', {
   tabs: true, nav: 'areas',
-  view: () => `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Buscar</div><h1 class="h1">Que profissional você procura?</h1></div></header>
+  view: () => `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Buscar</div><h1 class="h1">Que profissional você procura?</h1></div>${bellBtn()}</header>
   <main class="scroll gut">
     <div class="areas">${S.meta.areas.map((a) => `<button class="area ${a.id === 'aba' ? 'lav' : ''}" data-a="area" data-v="${a.id}"><span class="s-ic">${ic(a.ic)}</span><b>${esc(a.nome)}</b><span>${esc(a.desc)}</span><em>Ver profissionais</em></button>`).join('')}</div>
     <div class="two" style="gap:12px"><button class="tri-cta" data-a="tri">${ic('sparkle')}<div class="grow"><b>Não sabe por onde começar?</b><span>Responda a triagem gratuita e receba indicações compatíveis.</span></div>${ic('chevR')}</button>
@@ -398,6 +400,7 @@ screen('confirmado', {
       <div class="sum-r"><span>Código</span><b class="num">MS-${String(a.id).padStart(6, '0')}</b></div>
     </section>
     <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"><button class="btn btn-primary" data-a="tab" data-v="agenda">${ic('cal')}Ver na agenda</button><button class="btn btn-ghost" data-a="go" data-v="chat" data-p="${a.pro_id}">${ic('chat')}Mandar mensagem</button></div>
+    ${notifyInvite('confirmado')}
     </main>`;
   },
 });
@@ -417,7 +420,7 @@ screen('agenda', {
         : a.status === 'confirmed' ? `${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar na sessão</button>` : ''}<button class="btn btn-ghost btn-sm" data-a="go" data-v="chat" data-p="${a.pro_id}">${ic('chat')}Mensagem</button><button class="btn btn-ghost btn-sm" data-a="cancelAppt" data-v="${a.id}">Cancelar</button>`
         : `${a.status === 'done' ? (a.review_id ? `<span class="row small" style="gap:6px">Você avaliou ${stars(a.review_rating)}</span>` : `<button class="btn btn-primary btn-sm" data-a="go" data-v="avaliar" data-p="${a.id}">${ic('star')}Avaliar sessão</button>`) : ''}<button class="btn btn-ghost btn-sm" data-a="agendar" data-v="${a.pro_id}">Agendar de novo</button>`}
       </div></section>`;
-    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Minhas sessões</div><h1 class="h1">Agenda</h1></div></header>
+    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Minhas sessões</div><h1 class="h1">Agenda</h1></div>${bellBtn()}</header>
     <div class="gut" style="padding-bottom:12px;flex:none"><div class="seg" style="max-width:420px"><button class="${S.agTab === 'up' ? 'on' : ''}" data-a="agTab" data-v="up">Próximas (${d.upcoming.length})</button><button class="${S.agTab === 'past' ? 'on' : ''}" data-a="agTab" data-v="past">Anteriores (${d.past.length})</button></div></div>
     <main class="scroll gut">${list.length ? `<div class="agenda-list">${list.map(card).join('')}</div>` : `<div class="empty">${ic('cal')}<div>Nenhuma sessão por aqui.</div><button class="btn btn-primary btn-sm" data-a="tab" data-v="areas">Encontrar profissional</button></div>`}</main>`;
   },

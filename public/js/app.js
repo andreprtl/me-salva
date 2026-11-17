@@ -1,5 +1,7 @@
-// Inicialização da interface: carrega a sessão, liga os eventos e abre a primeira tela.
-import { S, A, F, I, api, render, resetTo, tab, homeOf, top, repaintShell, closeLayer, toast } from './core.js';
+// Inicialização da interface: carrega a sessão, liga os eventos, abre o canal em tempo real e a primeira tela.
+import { S, A, F, I, api, render, resetTo, tab, homeOf, top, closeLayer, toast } from './core.js';
+import { startLive, setCounts } from './realtime.js';
+import './screens/notifications.js';
 import './screens/common.js';
 import './screens/patient.js';
 import './screens/pro.js';
@@ -25,10 +27,11 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.layer 
 // Redesenha ao cruzar o limite entre celular e computador (layouts diferentes).
 matchMedia('(min-width: 960px)').addEventListener('change', () => { if (top()) { const t = top(); if (t.n !== 'sessao') render(); } });
 
-// Contador de mensagens não lidas.
+// Reserva dos contadores: com o canal em tempo real aberto, eles chegam pelo evento 'counts';
+// se o canal cair, a interface volta a perguntar a cada 15 segundos.
 setInterval(async () => {
-  if (!S.user || S.user.role === 'admin' || document.hidden) return;
-  try { const r = await api('/api/unread'); if (r.count !== S.unread) { S.unread = r.count; repaintShell(); } } catch { /* offline */ }
+  if (!S.user || S.user.role === 'admin' || document.hidden || S.live) return;
+  try { const r = await api('/api/unread'); setCounts({ messages: r.count, notifications: r.notifications }); } catch { /* offline */ }
 }, 15000);
 
 // Recarrega a página (botão 'Tentar de novo' sem script inline, que a CSP bloquearia).
@@ -41,7 +44,8 @@ async function boot() {
     S.meta = meta;
     S.user = me.user;
     S.unread = me.user?.unread || 0;
-    if (S.user) tab(homeOf(S.user)); else resetTo('entrada');
+    S.notif = me.user?.notifications || 0;
+    if (S.user) { startLive(); tab(homeOf(S.user)); } else resetTo('entrada');
   } catch (e) {
     document.getElementById('screen').innerHTML = `<div class="loading"><div class="empty"><div>Não foi possível conectar ao servidor do Me Salva.</div><button class="btn btn-primary btn-sm" data-a="reload">Tentar de novo</button></div></div>`;
     toast(e.message, 'err');

@@ -16,6 +16,7 @@ import messageRoutes from './routes/messages.js';
 import proRoutes from './routes/pro.js';
 import adminRoutes from './routes/admin.js';
 import realtimeRoutes from './routes/realtime.js';
+import notificationRoutes from './routes/notifications.js';
 
 // Content Security Policy: só scripts do próprio site (nenhum script inline), fontes do Google Fonts
 // e imagens e áudios locais. Limita o estrago de uma eventual injeção de HTML.
@@ -35,7 +36,7 @@ export function createApp({ db, config, notesKey }) {
   const svc = createServices(db, config, hub);
   const ctx = { db, config, svc, notesKey, hub };
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
-  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes]) mount(router, ctx);
+  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 
   // Identifica o usuário pelo cookie de sessão; o token é procurado pelo hash SHA-256 guardado no banco.

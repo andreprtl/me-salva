@@ -133,6 +133,28 @@ CREATE TABLE IF NOT EXISTS audit(
   target TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+-- v1.1: central de notificações. screen e param dizem qual tela abrir ao clicar;
+-- ref agrupa avisos do mesmo assunto (ex.: 'chat:12' junta as mensagens não lidas de uma conversa).
+CREATE TABLE IF NOT EXISTS notifications(
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('message','confirmed','cancelled','reminder','review','verified','rejected')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  screen TEXT,
+  param TEXT,
+  ref TEXT,
+  read_at TEXT,                        -- nulo enquanto não lida
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS notif_user ON notifications(user_id, read_at);
+-- v1.1: lembretes já enviados. A chave (sessão, tipo) impede enviar o mesmo lembrete duas vezes.
+CREATE TABLE IF NOT EXISTS reminders(
+  appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('24h','1h')),
+  sent_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  PRIMARY KEY(appointment_id, kind)
+);
 `;
 
 // Abre o banco e devolve uma interface pequena: all/get/run com parâmetros '?', exec, tx (transação)

@@ -24,7 +24,10 @@ export function startSession(db, config, req, res, userId) {
 export function publicUser(db, svc, u) {
   const base = { id: u.id, role: u.role, name: u.name, email: u.email, bairro: u.bairro, address: u.address, plan: u.plan, plan_since: u.plan_since, is_demo: Boolean(u.is_demo) };
   if (u.role === 'pro') base.pro = svc.getPro(u.id);
-  base.unread = svc.unreadCount(u);
+  // Contadores do menu: mensagens não lidas (unread) e notificações não lidas (notifications).
+  const c = svc.counts(u.id);
+  base.unread = c.messages;
+  base.notifications = c.notifications;
   return base;
 }
 

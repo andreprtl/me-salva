@@ -9,8 +9,12 @@ export default function meRoutes(r, { db, svc, hub, notesKey }) {
   // Usuário logado (ou null). É a primeira chamada da interface ao abrir.
   r.get('/api/me', (req) => ({ user: req.user ? publicUser(db, svc, req.user) : null }));
 
-  // Contador de mensagens não lidas, consultado pela interface a cada 15 segundos.
-  r.get('/api/unread', requireUser, (req) => ({ count: svc.unreadCount(req.user) }));
+  // Contadores de mensagens (count) e de notificações não lidas. Com o canal em tempo real ativo, a interface
+  // recebe esses números pelo evento 'counts'; esta rota é a reserva, consultada a cada 15 s se o canal cair.
+  r.get('/api/unread', requireUser, (req) => {
+    const c = svc.counts(req.user.id);
+    return { count: c.messages, notifications: c.notifications };
+  });
 
   // Atualiza nome, bairro e endereço; campos ausentes mantêm o valor atual.
   r.patch('/api/me', requireUser, (req) => {
@@ -53,6 +57,7 @@ export default function meRoutes(r, { db, svc, hub, notesKey }) {
       pagamentos: db.all('SELECT id, kind, method, amount, status, created_at, paid_at FROM payments WHERE user_id = ?', id),
       mensagens: db.all("SELECT id, patient_id, pro_id, sender_id, kind, body, created_at FROM messages WHERE patient_id = ? OR pro_id = ?", id, id),
       avaliacoes: db.all('SELECT pro_id, rating, tags, text, author_label, created_at FROM reviews WHERE patient_id = ?', id),
+      notificacoes: db.all('SELECT kind, title, body, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY id', id),
       prontuario: req.user.role === 'pro'
         ? db.all('SELECT patient_id, iv, tag, data, created_at FROM notes WHERE pro_id = ?', id).map((n) => ({ patient_id: n.patient_id, created_at: n.created_at, texto: decrypt(notesKey, n) }))
         : undefined,

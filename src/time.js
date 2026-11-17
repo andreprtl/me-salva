@@ -45,3 +45,14 @@ export function weekStart(day) {
 }
 // Mês 'AAAA-MM' de um horário.
 export const monthOf = (stamp) => stamp.slice(0, 7);
+
+// Texto curto de um horário para avisos e notificações: 'hoje (17/11) às 13:00', 'amanhã (18/11) às 10:00'
+// ou 'qua, 25/11 às 09:00'. A data entre parênteses mantém o texto claro quando ele é lido dias depois.
+const DOW = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+export function whenText(start, now = nowSP()) {
+  const day = start.slice(0, 10);
+  const today = now.slice(0, 10);
+  const dm = `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+  const label = day === today ? `hoje (${dm})` : day === addDays(today, 1) ? `amanhã (${dm})` : `${DOW[weekday(day)]}, ${dm}`;
+  return `${label} às ${start.slice(11, 16)}`;
+}

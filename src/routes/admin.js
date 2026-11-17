@@ -32,9 +32,14 @@ export default function adminRoutes(r, { db, config, svc, hub, notesKey }) {
   r.post('/api/admin/pros/:id/verify', onlyAdmin, (req) => {
     const id = Number(req.params.id);
     const decision = oneOf(req.body.decision, ['verified', 'rejected'], 'a decisão');
-    const p = db.get('SELECT status FROM pros WHERE user_id = ?', id);
+    const p = db.get('SELECT status, reg FROM pros WHERE user_id = ?', id);
     if (!p) throw new HttpError(404, 'Profissional não encontrado.');
-    db.run("UPDATE pros SET status = ?, verified_at = CASE WHEN ? = 'verified' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') END WHERE user_id = ?", decision, decision, id);
+    db.tx(() => {
+      db.run("UPDATE pros SET status = ?, verified_at = CASE WHEN ? = 'verified' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') END WHERE user_id = ?", decision, decision, id);
+      // O profissional fica sabendo na hora (notificação em tempo real).
+      if (decision === 'verified') svc.notify(id, { kind: 'verified', title: 'Registro aprovado', body: `Conferimos o registro ${p.reg}. Seu perfil já aparece na busca.`, screen: 'painel' });
+      else svc.notify(id, { kind: 'rejected', title: 'Registro não confirmado', body: `Não conseguimos confirmar o registro ${p.reg}. Confira o número em Meu perfil.`, screen: 'properfil' });
+    });
     svc.audit(req.user.id, 'pro.' + decision, String(id));
     return { ok: true };
   });

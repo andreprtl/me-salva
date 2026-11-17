@@ -10,6 +10,8 @@ import { randomBytes } from 'node:crypto';
 import { openDb } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { seedDemo } from '../src/seed.js';
+import { sha256 } from '../src/security.js';
+import { addDays, todaySP } from '../src/time.js';
 
 let server; let base; let dir; let db; let app;
 const config = { demoMode: true, videoBaseUrl: 'https://meet.jit.si/', sessionDays: 7, production: false, heartbeatMs: 300 };
@@ -43,12 +45,18 @@ function client() {
   call.cookie = () => cookie;
   return call;
 }
-async function login(email) {
+async function freshLogin(email) {
   const api = client();
   const r = await api('/api/auth/login', { method: 'POST', body: { email, password: 'demo1234' } });
   assert.equal(r.status, 200, `login de ${email}`);
   api.user = r.data.user;
   return api;
+}
+// Reaproveita o login de cada conta entre os testes (o servidor limita 12 entradas por IP a cada 5 minutos).
+const logged = new Map();
+async function login(email) {
+  if (!logged.has(email)) logged.set(email, await freshLogin(email));
+  return logged.get(email);
 }
 
 // Abre /api/stream e junta os eventos recebidos. waitFor espera um evento que satisfaça o critério.
@@ -130,6 +138,7 @@ test('tempo real: mensagem, "digitando…" e "visto" chegam só às duas pessoas
     assert.equal(got.data.message.seen, false);
     const echo = await sf.waitFor('message', (d) => d.message.id === msgId);
     assert.equal(echo.data.conversation, mId, 'para a profissional, a conversa é a paciente');
+    assert.deepEqual(echo.data.message, got.data.message, 'as outras abas de quem enviou recebem a mesma mensagem');
     const counts = await sm.waitFor('counts', (d) => d.messages >= 1);
     assert.ok(counts.data.messages >= 1, 'o contador de não lidas da Mariana sobe sozinho');
 
@@ -168,18 +177,19 @@ test('tempo real: profissional não manda "digitando…" para quem não é pacie
 });
 
 test('tempo real: sair da conta fecha o canal; sessão apagada é encerrada no sinal de vida', async () => {
-  const a = await login('mariana@demo.mesalva.app');
+  const a = await freshLogin('mariana@demo.mesalva.app');
   const sa = stream(a);
   await sa.waitFor('ping');
   // Logo depois de um sinal de vida, para provar que a saída fecha o canal na hora (antes do próximo sinal, em 300 ms).
   await a('/api/auth/logout', { method: 'POST' });
   await until(() => sa.closed, 120);
 
-  const b = await login('fernanda.alves@demo.mesalva.app');
+  const b = await freshLogin('fernanda.alves@demo.mesalva.app');
   const sb = stream(b);
   await sb.waitFor('hello');
   await sb.waitFor('ping'); // sinal de vida (300 ms neste teste)
-  db.run('DELETE FROM sessions WHERE user_id = ?', b.user.id); // por exemplo, sessão apagada por outro caminho
+  // Sessão apagada por outro caminho (por exemplo, vencida e limpa): o próximo sinal de vida fecha o canal.
+  db.run('DELETE FROM sessions WHERE token_hash = ?', sha256(b.cookie().split('=')[1]));
   await until(() => sb.closed, 1500);
 });
 
@@ -192,4 +202,108 @@ test('banco: avisos em tempo real só saem depois do COMMIT (nada sai de uma tra
   mem.afterCommit(() => out.push('fora de transação'));
   assert.deepEqual(out, ['gravado', 'fora de transação']);
   mem.close();
+});
+
+test('notificações: confirmação, cancelamento e avaliação chegam na hora a quem deve saber', async () => {
+  const mariana = await login('mariana@demo.mesalva.app');
+  const rafael = await login('rafael.nunes@demo.mesalva.app');
+  const fernanda = await login('fernanda.alves@demo.mesalva.app');
+  const sm = stream(mariana); const sr = stream(rafael); const sf = stream(fernanda);
+  try {
+    await Promise.all([sm.waitFor('hello'), sr.waitFor('hello'), sf.waitFor('hello')]);
+    // Reserva com mais de 24 h de antecedência (para a paciente poder cancelar depois).
+    const slots = await mariana(`/api/pros/${rafael.user.id}/slots`);
+    const slot = slots.data.days.filter((d) => d.date >= addDays(todaySP(), 3)).flatMap((d) => d.items).find((s) => !s.taken);
+    assert.ok(slot, 'deveria haver horário livre depois de amanhã');
+    const booking = await mariana('/api/appointments', { method: 'POST', body: { pro_id: rafael.user.id, start: slot.start, modality: 'online', method: 'pix' } });
+    await mariana(`/api/payments/${booking.data.payment.id}/pix-simulate`, { method: 'POST' });
+
+    const toPro = await sr.waitFor('notification', (d) => d.notification.kind === 'confirmed');
+    assert.equal(toPro.data.notification.title, 'Nova sessão confirmada');
+    assert.match(toPro.data.notification.body, /^Mariana Souza marcou /);
+    assert.equal(toPro.data.notification.screen, 'proagenda');
+    const toPatient = await sm.waitFor('notification', (d) => d.notification.kind === 'confirmed');
+    assert.match(toPatient.data.notification.body, /^Sua sessão com Rafael Nunes é /);
+    await sr.waitFor('counts', (d) => d.notifications >= 1);
+
+    // A paciente cancela: só o profissional é avisado.
+    await mariana(`/api/appointments/${booking.data.appointment_id}/cancel`, { method: 'POST' });
+    const cancel = await sr.waitFor('notification', (d) => d.notification.kind === 'cancelled');
+    assert.match(cancel.data.notification.body, /^Mariana Souza cancelou a sessão de /);
+    await sleep(100);
+    assert.ok(!sm.events.some((e) => e.event === 'notification' && e.data.notification.kind === 'cancelled'), 'quem cancelou não recebe aviso');
+
+    // Avaliação depois da sessão: a profissional recebe a nota.
+    const list = await mariana('/api/appointments');
+    const online = list.data.upcoming.find((a) => a.pro_id === fernanda.user.id && a.status === 'confirmed');
+    await mariana(`/api/appointments/${online.id}/finish`, { method: 'POST' });
+    await mariana(`/api/appointments/${online.id}/review`, { method: 'POST', body: { rating: 5, tags: [], anonymous: false } });
+    const rev = await sf.waitFor('notification', (d) => d.notification.kind === 'review');
+    assert.equal(rev.data.notification.body, 'Mariana S. avaliou a sessão com 5 estrelas.');
+
+    // Isolamento: o Rafael não recebeu a avaliação da Fernanda.
+    await sleep(100);
+    assert.ok(!sr.events.some((e) => e.event === 'notification' && e.data.notification.kind === 'review'));
+  } finally { sm.close(); sr.close(); sf.close(); }
+});
+
+test('notificações: mensagens da mesma conversa viram um aviso só, sem o texto; abrir a conversa resolve o aviso', async () => {
+  const mariana = await login('mariana@demo.mesalva.app');
+  const fernanda = await login('fernanda.alves@demo.mesalva.app');
+  const sm = stream(mariana);
+  try {
+    await sm.waitFor('hello');
+    const mId = mariana.user.id; const fId = fernanda.user.id;
+    await mariana(`/api/conversations/${fId}`); // começa sem mensagens não lidas dessa conversa
+    await fernanda(`/api/conversations/${mId}`, { method: 'POST', body: { kind: 'text', body: 'Texto sigiloso 1' } });
+    await fernanda(`/api/conversations/${mId}`, { method: 'POST', body: { kind: 'text', body: 'Texto sigiloso 2' } });
+    await sm.waitFor('notification', (d) => d.notification.body === 'Fernanda Alves enviou 2 mensagens.');
+
+    const list = await mariana('/api/notifications');
+    const chatNotes = list.data.notifications.filter((n) => n.kind === 'message' && n.param === String(fId) && !n.read);
+    assert.equal(chatNotes.length, 1, 'um aviso por conversa, não um por mensagem');
+    assert.equal(chatNotes[0].screen, 'chat');
+    assert.ok(!JSON.stringify(list.data).includes('sigiloso'), 'o texto da mensagem não vai para a notificação');
+
+    const before = list.data.unread;
+    await mariana(`/api/conversations/${fId}`);
+    const after2 = await mariana('/api/notifications');
+    assert.equal(after2.data.unread, before - 1);
+    assert.ok(after2.data.notifications.find((n) => n.id === chatNotes[0].id).read);
+  } finally { sm.close(); }
+});
+
+test('notificações: marcar uma, marcar todas e ninguém mexe na notificação de outra pessoa', async () => {
+  const mariana = await login('mariana@demo.mesalva.app');
+  const rafael = await login('rafael.nunes@demo.mesalva.app');
+  const fernanda = await login('fernanda.alves@demo.mesalva.app');
+  await fernanda(`/api/conversations/${mariana.user.id}`, { method: 'POST', body: { kind: 'text', body: 'Até já!' } });
+  const list = await mariana('/api/notifications');
+  const mine = list.data.notifications.find((n) => !n.read);
+  assert.ok(mine, 'a Mariana tem pelo menos uma notificação não lida');
+
+  const other = await rafael(`/api/notifications/${mine.id}/read`, { method: 'POST' });
+  assert.equal(other.status, 404, 'notificação de outra pessoa não existe para quem pergunta');
+  assert.equal((await mariana('/api/notifications')).data.notifications.find((n) => n.id === mine.id).read, false);
+
+  const one = await mariana(`/api/notifications/${mine.id}/read`, { method: 'POST' });
+  assert.equal(one.status, 200);
+  assert.equal(one.data.unread, list.data.unread - 1);
+  const all = await mariana('/api/notifications/read-all', { method: 'POST' });
+  assert.equal(all.data.unread, 0);
+  assert.equal((await mariana('/api/unread')).data.notifications, 0);
+  assert.equal((await mariana('/api/me')).data.user.notifications, 0);
+});
+
+test('notificações: aprovar o registro avisa o profissional na hora', async () => {
+  const bea = await login('beatriz.campos@demo.mesalva.app');
+  const admin = await login('admin@demo.mesalva.app');
+  const sb = stream(bea);
+  try {
+    await sb.waitFor('hello');
+    await admin(`/api/admin/pros/${bea.user.id}/verify`, { method: 'POST', body: { decision: 'verified' } });
+    const n = await sb.waitFor('notification', (d) => d.notification.kind === 'verified');
+    assert.equal(n.data.notification.title, 'Registro aprovado');
+    assert.equal(n.data.notification.screen, 'painel');
+  } finally { sb.close(); }
 });

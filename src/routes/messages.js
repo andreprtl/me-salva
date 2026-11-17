@@ -56,11 +56,13 @@ export default function messageRoutes(r, { db, svc, hub }) {
     const readCol = req.user.role === 'patient' ? 'read_by_patient' : 'read_by_pro';
     const marked = db.run(`UPDATE messages SET ${readCol} = 1 WHERE patient_id = ? AND pro_id = ? AND ${readCol} = 0`, c.patient_id, c.pro_id).changes;
     const msgs = db.all('SELECT * FROM messages WHERE patient_id = ? AND pro_id = ? AND id > ? ORDER BY id LIMIT 300', c.patient_id, c.pro_id, after);
+    // Abrir a conversa também resolve a notificação "Nova mensagem" dela.
+    const notes = svc.readChatNotifications(req.user.id, c.other.id);
     if (marked) {
       const upTo = db.get('SELECT MAX(id) n FROM messages WHERE patient_id = ? AND pro_id = ?', c.patient_id, c.pro_id).n;
       hub.send(c.other.id, 'read', { conversation: req.user.id, upTo });
-      svc.sendCounts(req.user.id); // as outras abas de quem leu também zeram o contador
     }
+    if (marked || notes) svc.sendCounts(req.user.id); // as outras abas de quem leu também atualizam os contadores
     return { other: c.other, me: req.user.id, messages: msgs.map(view) };
   });
 

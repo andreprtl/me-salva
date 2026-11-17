@@ -15,6 +15,11 @@ export function messageView(m) {
   return { id: m.id, sender_id: m.sender_id, kind: m.kind, body: m.body, duration: m.duration, created_at: m.created_at, seen };
 }
 
+// Formato de uma notificação enviado ao navegador.
+export function notificationView(n) {
+  return { id: n.id, kind: n.kind, title: n.title, body: n.body, screen: n.screen, param: n.param, read: Boolean(n.read_at), created_at: n.created_at };
+}
+
 // hub é o distribuidor de eventos em tempo real; sem ele (scripts e testes de regra), os eventos são ignorados.
 export function createServices(db, config, hub = { send() {} }) {
   // Reservas aguardando pagamento por mais de 15 minutos liberam o horário.
@@ -75,9 +80,49 @@ export function createServices(db, config, hub = { send() {} }) {
     const byPro = sender_id === pro_id ? 1 : 0;
     const id = db.run(`INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, audio, duration, read_by_patient, read_by_pro)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, patient_id, pro_id, sender_id, kind, body, audio, duration, byPatient, byPro).lastInsertRowid;
+    if (sender_id && kind !== 'system') notifyMessage({ patient_id, pro_id, sender_id });
     db.afterCommit(() => publishMessage(id));
     return id;
   }
+
+  // Notificação de mensagem nova para quem recebeu. Mensagens não lidas da mesma conversa viram um aviso só
+  // ("Fernanda Alves enviou 3 mensagens."). O texto da mensagem não entra na notificação: o aviso do sistema
+  // pode aparecer na tela bloqueada do aparelho, e a conversa é sobre saúde.
+  function notifyMessage({ patient_id, pro_id, sender_id }) {
+    const toPatient = sender_id === pro_id;
+    const to = toPatient ? patient_id : pro_id;
+    const readCol = toPatient ? 'read_by_patient' : 'read_by_pro';
+    const from = db.get('SELECT name FROM users WHERE id = ?', sender_id)?.name || 'Alguém';
+    const n = db.get(`SELECT COUNT(*) n FROM messages WHERE patient_id = ? AND pro_id = ? AND sender_id = ? AND ${readCol} = 0`, patient_id, pro_id, sender_id).n;
+    notify(to, {
+      kind: 'message', title: 'Nova mensagem', body: n > 1 ? `${from} enviou ${n} mensagens.` : `${from} enviou uma mensagem.`,
+      screen: 'chat', param: String(sender_id), ref: `chat:${sender_id}`,
+    });
+  }
+
+  // Cria uma notificação e a empurra em tempo real para as abas do usuário (depois do COMMIT).
+  // Com ref, uma notificação ainda não lida do mesmo assunto é atualizada em vez de duplicada.
+  function notify(userId, { kind, title, body = '', screen = null, param = null, ref = null }) {
+    if (!userId) return null;
+    let id = ref ? db.get('SELECT id FROM notifications WHERE user_id = ? AND ref = ? AND read_at IS NULL', userId, ref)?.id : null;
+    if (id) {
+      db.run("UPDATE notifications SET title = ?, body = ?, created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", title, body, id);
+    } else {
+      id = db.run('INSERT INTO notifications(user_id, kind, title, body, screen, param, ref) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        userId, kind, title, body, screen, param, ref).lastInsertRowid;
+    }
+    db.afterCommit(() => {
+      const row = db.get('SELECT * FROM notifications WHERE id = ?', id);
+      if (!row) return;
+      hub.send(userId, 'notification', { notification: notificationView(row) });
+      sendCounts(userId);
+    });
+    return id;
+  }
+
+  // Marca como lidas as notificações de mensagem de uma conversa (quando a pessoa abre a conversa).
+  const readChatNotifications = (userId, otherId) => db.run(
+    "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE user_id = ? AND ref = ? AND read_at IS NULL", userId, `chat:${otherId}`).changes;
 
   // Evento 'message' para as duas pessoas da conversa (e só para elas). Cada lado recebe o id da conversa
   // do seu ponto de vista: para o paciente, a conversa é o profissional; para o profissional, o paciente.
@@ -102,7 +147,7 @@ export function createServices(db, config, hub = { send() {} }) {
   function counts(userId) {
     const u = db.get('SELECT id, role FROM users WHERE id = ?', userId);
     if (!u) return { messages: 0, notifications: 0 };
-    return { messages: unreadCount(u), notifications: 0 };
+    return { messages: unreadCount(u), notifications: db.get('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL', userId).n };
   }
   // Atualiza os contadores em todas as abas do usuário.
   const sendCounts = (userId) => hub.send(userId, 'counts', counts(userId));
@@ -118,5 +163,8 @@ export function createServices(db, config, hub = { send() {} }) {
   // Distância aproximada entre o bairro do usuário e o do profissional.
   const distance = (user, pro) => distanceKm(user?.bairro || 'Bela Vista', pro.bairro);
 
-  return { expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts, roomOpen, distance };
+  return {
+    expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts,
+    notify, readChatNotifications, roomOpen, distance,
+  };
 }

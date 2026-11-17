@@ -595,3 +595,50 @@ table.tbl{border-collapse:collapse;width:100%;min-width:560px;font-size:13px}
 .segbtn .ic{width:16px;height:16px}
 .seg input:checked+.segbtn{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
 .seg input:focus-visible+.segbtn{outline:2.5px solid var(--teal)}
+
+/* ---------- v1.1: tempo real e notificações ---------- */
+/* Número de não lidas ao lado de "Mensagens" no cabeçalho do computador. */
+.btn-count{min-width:20px;height:20px;border-radius:10px;background:var(--teal);color:var(--on-teal);font-size:11px;font-weight:700;display:inline-grid;place-items:center;padding:0 6px}
+/* Minhas mensagens: um tique (enviada) ou dois tiques em menta (vista). */
+.tick{display:inline-flex;vertical-align:-3px;margin-left:4px}
+.tick .ic{width:15px;height:15px}
+.msg.me .tick.seen{color:#A9DCD0}
+:root.dark .msg.me .tick.seen{color:#D2F5EA}
+.msg.audio .tick{align-self:flex-end;opacity:.75}
+/* A hora fica esmaecida pela cor (e não por opacidade) para o tique de "visto" manter a cor cheia. */
+.msg small{opacity:1;color:color-mix(in srgb,currentColor 65%,transparent)}
+.seen-lbl{align-self:flex-end;display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--accent-ink);margin-top:-6px}
+.seen-lbl .ic{width:14px;height:14px}
+/* "Fulana está digitando…", logo acima do campo de mensagem (as bolinhas usam o balão .typing da v1.0). */
+.typing-row{flex:none;display:flex;align-items:center;gap:8px;padding:4px 16px 6px;font-size:12px;color:var(--muted);font-style:italic}
+@media (min-width:960px){.typing-row{padding:4px max(24px,calc((100% - 760px)/2)) 6px}}
+.typing-row .typing{padding:8px 11px}
+.typing-row .typing i{background:var(--teal)}
+/* Painel de notificações: gaveta à direita (tela cheia no celular). */
+.npanel{position:absolute;top:0;bottom:0;right:0;width:min(100%,420px);background:var(--bg);display:flex;flex-direction:column;animation:dr .3s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow);padding-bottom:env(safe-area-inset-bottom,0px)}
+@keyframes dr{from{transform:translateX(60%);opacity:.3}}
+.np-head{display:flex;align-items:center;gap:10px;padding:max(18px,env(safe-area-inset-top,0px)) 14px 6px 20px}
+.np-tools{padding:0 18px 6px;display:flex;justify-content:flex-end}
+.np-tools .link{display:inline-flex;align-items:center;gap:6px}
+.np-tools .ic{width:16px;height:16px}
+.np-list{flex:1;min-height:0;overflow-y:auto;padding:4px 12px 12px;display:flex;flex-direction:column;gap:6px}
+.np-item{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:12px;cursor:pointer;color:var(--ink)}
+.np-item:hover{border-color:var(--teal)}
+.np-item.is-unread{background:color-mix(in srgb,var(--teal-soft) 55%,var(--surface))}
+.np-item b{display:block;font-weight:600;font-size:13.5px}
+.np-item .grow>span{display:block;font-size:12.5px;color:var(--muted)}
+.np-item em{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:3px}
+.np-ic{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--teal-soft);color:var(--accent-ink)}
+.np-ic .ic{width:19px;height:19px}
+.np-ic.k-reminder{background:var(--lav-soft);color:var(--lav)}
+.np-ic.k-cancelled,.np-ic.k-rejected{background:var(--danger-soft);color:var(--danger)}
+.np-ic.k-review{background:color-mix(in srgb,var(--gold) 18%,var(--surface));color:var(--gold)}
+.np-dot{width:9px;height:9px;border-radius:50%;background:var(--teal);flex:none;margin-top:6px}
+/* Convite para ativar os avisos do navegador (no painel e na tela de sessão agendada). */
+.np-invite{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;background:var(--lav-soft);border-radius:16px;padding:12px 14px}
+.npanel .np-invite{margin:0 12px 14px}
+.np-invite>.ic{color:var(--lav)}
+.np-invite .grow{flex:1 1 200px}
+.np-invite .row{margin-left:auto}
+.np-invite b{display:block;font-size:13px}
+.np-invite .grow span{font-size:12px;color:var(--muted)}

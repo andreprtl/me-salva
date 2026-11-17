@@ -12,8 +12,9 @@ export const $ = (s, el = document) => el.querySelector(s);
 // Escapa texto antes de colocá-lo no HTML. Todo dado vindo da API passa por esc() para evitar injeção de código.
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Estado global: usuário logado, dados de referência, pilha de telas, camada aberta, chamada em andamento e não lidas.
-export const S = { user: null, meta: null, stack: [], dir: '', layer: null, call: null, unread: 0 };
+// Estado global: usuário logado, dados de referência, pilha de telas, camada aberta, chamada em andamento,
+// mensagens não lidas (unread), notificações não lidas (notif) e se o canal em tempo real está aberto (live).
+export const S = { user: null, meta: null, stack: [], dir: '', layer: null, call: null, unread: 0, notif: 0, live: false };
 export const SCREENS = {};   // nome → { load, view, after, nav, tabs, width }
 export const A = {};         // ações de clique (data-a)
 export const F = {};         // envios de formulário (data-f)
@@ -123,10 +124,12 @@ function paintShell(t, def) {
   if (bare) { tb.hidden = true; tb.innerHTML = ''; $('#side').innerHTML = ''; return; }
   const items = NAV[S.user.role] || [];
   const cur = def.nav || t.n;
-  const badge = (n) => (n === 'chats' && S.unread ? `<span class="count-b">${S.unread}</span>` : '');
+  // Os números ficam em elementos data-badge, que syncBadges() atualiza sem redesenhar o menu.
+  const badge = (n) => (n === 'chats' ? countBadge('msg', 'count-b') : '');
   const pro = S.user.pro;
+  const bell = S.user.role === 'admin' ? '' : `<button class="nav" data-a="notifs" data-bell aria-label="${bellLabel()}">${ic('bell')}Notificações${countBadge('notif', 'count-b')}</button>`;
   $('#side').innerHTML = `<button class="side-logo" data-a="tab" data-v="${homeOf(S.user)}" aria-label="Início">${wordmark(24)}${S.user.role === 'pro' ? '<span class="tag teal" style="margin-left:4px">Pro</span>' : ''}</button>
-    <div class="side-nav">${items.map(([n, i, l]) => `<button class="nav ${cur === n ? 'on' : ''}" data-a="tab" data-v="${n}" ${cur === n ? 'aria-current="page"' : ''}>${ic(i)}${l}${badge(n)}</button>`).join('')}</div>
+    <div class="side-nav">${items.map(([n, i, l]) => `<button class="nav ${cur === n ? 'on' : ''}" data-a="tab" data-v="${n}" ${cur === n ? 'aria-current="page"' : ''}>${ic(i)}${l}${badge(n)}</button>`).join('')}${bell}</div>
     ${S.user.role === 'patient' ? `<div class="side-nav"><div class="side-label">Atalhos</div><button class="nav" data-a="tri">${ic('sparkle')}Triagem gratuita</button><button class="nav" data-a="short" data-v="social">${ic('heart')}Vagas sociais</button></div>` : ''}
     <div class="side-foot">
       <button class="crisis" data-a="crise">${ic('lifebuoy')}<div><b>Precisa de ajuda agora?</b><span>CVV 188, 24 horas</span></div></button>
@@ -134,10 +137,28 @@ function paintShell(t, def) {
     </div>`;
   if (def.tabs) {
     tb.hidden = false;
-    tb.innerHTML = items.filter((x) => x[3]).map(([n, i, , short]) => `<button class="tab ${cur === n ? 'on' : ''}" data-a="tab" data-v="${n}" ${cur === n ? 'aria-current="page"' : ''}>${ic(i)}${short}${n === 'chats' && S.unread ? `<span class="badge" style="right:6px">${S.unread}</span>` : ''}</button>`).join('');
+    tb.innerHTML = items.filter((x) => x[3]).map(([n, i, , short]) => `<button class="tab ${cur === n ? 'on' : ''}" data-a="tab" data-v="${n}" ${cur === n ? 'aria-current="page"' : ''}>${ic(i)}${short}${n === 'chats' ? countBadge('msg', 'badge', 'right:6px') : ''}</button>`).join('');
   } else { tb.hidden = true; tb.innerHTML = ''; }
 }
 export function repaintShell() { const t = top(); if (t) paintShell(t, SCREENS[t.n] || {}); }
+
+/* ---------------- contadores e sino ---------------- */
+// Número de não lidas: 'msg' (mensagens) ou 'notif' (notificações).
+const countOf = (kind) => (kind === 'msg' ? S.unread : S.notif) || 0;
+// Selo com o número, escondido quando é zero. syncBadges() mantém todos atualizados.
+export const countBadge = (kind, cls, style = '') => `<span class="${cls}" data-badge="${kind}" ${style ? `style="${style}"` : ''} ${countOf(kind) ? '' : 'hidden'}>${countOf(kind)}</span>`;
+const bellLabel = () => (S.notif ? `Notificações, ${S.notif} não ${S.notif === 1 ? 'lida' : 'lidas'}` : 'Notificações');
+// Sino das telas do celular (no computador ele fica na barra lateral).
+export const bellBtn = () => `<button class="icon-btn plain only-m" data-a="notifs" data-bell aria-label="${bellLabel()}">${ic('bell')}${countBadge('notif', 'badge')}</button>`;
+// Atualiza todos os contadores visíveis (menu, abas, sino e atalhos das telas) com S.unread e S.notif.
+export function syncBadges() {
+  document.querySelectorAll('[data-badge]').forEach((el) => {
+    const n = countOf(el.dataset.badge);
+    el.textContent = n;
+    el.hidden = !n;
+  });
+  document.querySelectorAll('[data-bell]').forEach((el) => el.setAttribute('aria-label', bellLabel()));
+}
 
 /* ---------------- camadas ---------------- */
 // Camadas: folhas e menus sobrepostos à tela (confirmação, filtros, ajuda imediata, carregando).
@@ -205,6 +226,15 @@ export function dayLabel(day) {
   return `${DOW[weekdayOf(day)]}, ${d} ${MES[m - 1]}`;
 }
 export const when = (start) => `${dayLabel(start.slice(0, 10))}, ${start.slice(11, 16)}`;
+// Tempo desde um instante ISO: 'agora', 'há 5 min', 'há 2 h', 'ontem' ou a data.
+export function ago(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  if (min < 24 * 60) return `há ${Math.floor(min / 60)} h`;
+  if (min < 48 * 60) return 'ontem';
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
 export const dateBox = (start) => { const [, m, d] = dayParts(start.slice(0, 10)); return `<div class="datebox"><b>${d}</b><span>${MES[m - 1]}</span></div>`; };
 // Hora curta das mensagens: hora, 'ontem', dia da semana ou data.
 export function msgTime(iso) {
@@ -229,6 +259,7 @@ const IC = {
   filter: '<path d="M3 5h18l-7 8.2V19l-4 2v-7.8z"/>',
   star: '<path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.4L12 17.4l-5.8 3 1.1-6.4-4.7-4.6 6.5-.9z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  checks: '<path d="m1.5 12.5 4.5 4.5L16.5 6.5M11 16l1 1L22.5 6.5"/>',
   verified: '<circle cx="12" cy="12" r="9"/><path d="m8.4 12.2 2.5 2.5 4.8-5"/>',
   pin: '<path d="M12 21.5s-7-6.1-7-12a7 7 0 0 1 14 0c0 5.9-7 12-7 12z"/><circle cx="12" cy="9.5" r="2.5"/>',
   video: '<rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="m16 10.5 6-3.5v10l-6-3.5"/>',

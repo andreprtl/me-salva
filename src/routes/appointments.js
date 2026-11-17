@@ -1,7 +1,7 @@
 // Agendamento, pagamento simulado (PIX e cartão), sala de vídeo, encerramento e avaliação.
 import { requireUser, requireRole } from '../guards.js';
 import { HttpError } from '../http.js';
-import { nowSP, toMinutes } from '../time.js';
+import { nowSP, toMinutes, whenText } from '../time.js';
 import { quote } from '../pricing.js';
 import { findSlot } from '../slots.js';
 import { pixCode, luhn, randomId } from '../security.js';
@@ -25,7 +25,15 @@ export default function appointmentRoutes(r, { db, config, svc }) {
     if (!a || (a.patient_id !== req.user.id && a.pro_id !== req.user.id)) throw new HttpError(404, 'Agendamento não encontrado.');
   };
 
-  // Pagamento aprovado: marca como pago, confirma a sessão, cria a sala de vídeo e avisa os dois no chat.
+  // Nomes do paciente e do profissional de uma sessão (para os textos das notificações).
+  const names = (a) => ({
+    patient: db.get('SELECT name FROM users WHERE id = ?', a.patient_id)?.name || 'Paciente',
+    pro: db.get('SELECT name FROM users WHERE id = ?', a.pro_id)?.name || 'Profissional',
+  });
+  const modal = (a) => (a.modality === 'online' ? 'online' : 'presencial');
+
+  // Pagamento aprovado: marca como pago, confirma a sessão, cria a sala de vídeo, avisa os dois no chat
+  // e cria uma notificação para cada lado.
   function confirm(paymentId) {
     db.tx(() => {
       const pay = db.get('SELECT * FROM payments WHERE id = ?', paymentId);
@@ -34,6 +42,10 @@ export default function appointmentRoutes(r, { db, config, svc }) {
       db.run("UPDATE appointments SET status = 'confirmed', expires_at = NULL, room = ? WHERE id = ?", 'MeSalva-' + randomId(9), a.id);
       const where = a.modality === 'online' ? 'online, pela sala segura da plataforma' : 'presencial';
       svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system', body: `Sessão confirmada para ${fmtDay(a.start)} (${where}).` });
+      const n = names(a);
+      const when = whenText(a.start);
+      svc.notify(a.patient_id, { kind: 'confirmed', title: 'Sessão confirmada', body: `Sua sessão com ${n.pro} é ${when} (${modal(a)}).`, screen: 'agenda' });
+      svc.notify(a.pro_id, { kind: 'confirmed', title: 'Nova sessão confirmada', body: `${n.patient} marcou ${when} (${modal(a)}${a.social ? ', vaga social' : ''}).`, screen: 'proagenda' });
     });
   }
 
@@ -162,6 +174,14 @@ export default function appointmentRoutes(r, { db, config, svc }) {
       if (a.status === 'confirmed') {
         svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system',
           body: `Sessão de ${fmtDay(a.start)} cancelada pelo ${req.user.role === 'pro' ? 'profissional' : 'paciente'}. O valor pago será devolvido.` });
+        // Notificação só para o outro lado: quem cancelou já sabe.
+        const n = names(a);
+        const when = whenText(a.start);
+        if (req.user.role === 'pro') {
+          svc.notify(a.patient_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.pro} cancelou a sessão de ${when}. O valor pago será devolvido.`, screen: 'agenda' });
+        } else {
+          svc.notify(a.pro_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.patient} cancelou a sessão de ${when}.`, screen: 'proagenda' });
+        }
       }
     });
     return { ok: true };
@@ -211,8 +231,11 @@ export default function appointmentRoutes(r, { db, config, svc }) {
     const parts = req.user.name.trim().split(/\s+/);
     // O autor aparece como 'Mariana S.' ou 'Anônimo', nunca com o nome completo.
     const label = req.body.anonymous ? 'Anônimo' : `${parts[0]}${parts.length > 1 ? ' ' + parts[parts.length - 1][0] + '.' : ''}`;
-    db.run('INSERT INTO reviews(appointment_id, patient_id, pro_id, rating, tags, text, author_label, modality) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      a.id, req.user.id, a.pro_id, rating, JSON.stringify(tags), text, label, a.modality);
+    db.tx(() => {
+      db.run('INSERT INTO reviews(appointment_id, patient_id, pro_id, rating, tags, text, author_label, modality) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        a.id, req.user.id, a.pro_id, rating, JSON.stringify(tags), text, label, a.modality);
+      svc.notify(a.pro_id, { kind: 'review', title: 'Nova avaliação', body: `${label} avaliou a sessão com ${rating} ${rating === 1 ? 'estrela' : 'estrelas'}.`, screen: 'perfil', param: String(a.pro_id) });
+    });
     return { ok: true, pro: svc.getPro(a.pro_id) };
   });
 

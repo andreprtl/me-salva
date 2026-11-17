@@ -20,4 +20,6 @@ export const config = {
   videoBaseUrl: env.VIDEO_BASE_URL || 'https://meet.jit.si/',
   // Validade do login, em dias.
   sessionDays: 7,
+  // Sinal de vida do canal em tempo real (/api/stream), em milissegundos.
+  heartbeatMs: 25000,
 };

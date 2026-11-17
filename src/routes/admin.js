@@ -4,8 +4,9 @@ import { HttpError } from '../http.js';
 import { nowSP } from '../time.js';
 import { oneOf, bad } from '../validate.js';
 import { seedDemo } from '../seed.js';
+import { DEMO_AHEAD_MIN } from '../reminders.js';
 
-export default function adminRoutes(r, { db, config, svc, notesKey }) {
+export default function adminRoutes(r, { db, config, svc, hub, reminders, notesKey }) {
   const onlyAdmin = requireRole('admin');
 
   // Indicadores do mês e a fila de profissionais aguardando verificação.
@@ -32,17 +33,30 @@ export default function adminRoutes(r, { db, config, svc, notesKey }) {
   r.post('/api/admin/pros/:id/verify', onlyAdmin, (req) => {
     const id = Number(req.params.id);
     const decision = oneOf(req.body.decision, ['verified', 'rejected'], 'a decisão');
-    const p = db.get('SELECT status FROM pros WHERE user_id = ?', id);
+    const p = db.get('SELECT status, reg FROM pros WHERE user_id = ?', id);
     if (!p) throw new HttpError(404, 'Profissional não encontrado.');
-    db.run("UPDATE pros SET status = ?, verified_at = CASE WHEN ? = 'verified' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') END WHERE user_id = ?", decision, decision, id);
+    db.tx(() => {
+      db.run("UPDATE pros SET status = ?, verified_at = CASE WHEN ? = 'verified' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') END WHERE user_id = ?", decision, decision, id);
+      // O profissional fica sabendo na hora (notificação em tempo real).
+      if (decision === 'verified') svc.notify(id, { kind: 'verified', title: 'Registro aprovado', body: `Conferimos o registro ${p.reg}. Seu perfil já aparece na busca.`, screen: 'painel' });
+      else svc.notify(id, { kind: 'rejected', title: 'Registro não confirmado', body: `Não conseguimos confirmar o registro ${p.reg}. Confira o número em Meu perfil.`, screen: 'properfil' });
+    });
     svc.audit(req.user.id, 'pro.' + decision, String(id));
     return { ok: true };
+  });
+
+  // "Disparar lembretes agora" (só no modo demonstração). O servidor já confere os lembretes a cada minuto;
+  // este botão antecipa o lembrete de 1 h das sessões das próximas 3 horas, para mostrar na apresentação.
+  r.post('/api/admin/reminders/run', onlyAdmin, () => {
+    if (!config.demoMode) throw bad('Disponível só no modo de demonstração.');
+    return { sent: reminders.run({ ahead: DEMO_AHEAD_MIN }).length, ahead_minutes: DEMO_AHEAD_MIN };
   });
 
   // Apaga tudo e recria os dados fictícios (só no modo demonstração).
   r.post('/api/admin/reset-demo', onlyAdmin, () => {
     if (!config.demoMode) throw bad('Disponível só no modo de demonstração.');
     seedDemo(db, { reset: true, notesKey });
+    hub.dropAll(); // as sessões foram apagadas: as abas abertas reconectam e voltam para a tela de entrada
     return { ok: true };
   });
 }

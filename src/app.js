@@ -7,6 +7,8 @@ import { sha256 } from './security.js';
 import { COOKIE } from './guards.js';
 export { COOKIE, requireUser, requireRole } from './guards.js';
 import { createServices } from './services.js';
+import { createHub } from './realtime.js';
+import { createReminders } from './reminders.js';
 import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import catalogRoutes from './routes/catalog.js';
@@ -14,6 +16,8 @@ import appointmentRoutes from './routes/appointments.js';
 import messageRoutes from './routes/messages.js';
 import proRoutes from './routes/pro.js';
 import adminRoutes from './routes/admin.js';
+import realtimeRoutes from './routes/realtime.js';
+import notificationRoutes from './routes/notifications.js';
 
 // Content Security Policy: só scripts do próprio site (nenhum script inline), fontes do Google Fonts
 // e imagens e áudios locais. Limita o estrago de uma eventual injeção de HTML.
@@ -26,12 +30,16 @@ const CSP = [
 
 // Recebe o banco, a configuração e a chave do prontuário e devolve o handler HTTP.
 // Os testes usam esta mesma função com um banco temporário.
+// O handler devolvido carrega handle.ctx (banco, serviços, hub, lembretes) e handle.close(), que encerra as conexões
+// em tempo real. A conferência automática dos lembretes é ligada no server.js (os testes a chamam com horário fixo).
 export function createApp({ db, config, notesKey }) {
   const router = createRouter();
-  const svc = createServices(db, config);
-  const ctx = { db, config, svc, notesKey };
+  const hub = createHub({ db, heartbeatMs: config.heartbeatMs });
+  const svc = createServices(db, config, hub);
+  const reminders = createReminders({ db, svc });
+  const ctx = { db, config, svc, notesKey, hub, reminders };
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
-  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes]) mount(router, ctx);
+  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 
   // Identifica o usuário pelo cookie de sessão; o token é procurado pelo hash SHA-256 guardado no banco.
@@ -44,7 +52,7 @@ export function createApp({ db, config, notesKey }) {
     return row;
   }
 
-  return async function handle(req, res) {
+  async function handle(req, res) {
     res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -81,5 +89,8 @@ export function createApp({ db, config, notesKey }) {
       if (res.headersSent) return res.end();
       sendJson(res, e.status || 500, { error: e instanceof HttpError ? e.message : 'Algo deu errado no servidor. Tente de novo.' });
     }
-  };
+  }
+  handle.ctx = ctx;
+  handle.close = () => hub.close();
+  return handle;
 }

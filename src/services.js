@@ -1,4 +1,5 @@
 // Consultas e regras reaproveitadas por várias rotas (criadas uma vez em createApp e passadas como ctx.svc).
+// Também é aqui que as gravações viram eventos em tempo real (hub, em realtime.js).
 import { json } from './db.js';
 import { nowSP, toMinutes } from './time.js';
 import { buildSlots } from './slots.js';
@@ -7,7 +8,20 @@ import { BAIRROS, distanceKm } from '../public/js/shared/data.js';
 // Status que ocupam um horário na agenda (uma sessão cancelada libera o horário).
 const ACTIVE = "('pending_payment','confirmed','done','no_show')";
 
-export function createServices(db, config) {
+// Formato de uma mensagem enviado ao navegador; o áudio em si é baixado à parte em /api/messages/:id/audio.
+// seen ("visto"): a outra pessoa da conversa já abriu a mensagem. Mensagens do sistema não têm visto.
+export function messageView(m) {
+  const seen = m.kind !== 'system' && Boolean(m.sender_id === m.patient_id ? m.read_by_pro : m.read_by_patient);
+  return { id: m.id, sender_id: m.sender_id, kind: m.kind, body: m.body, duration: m.duration, created_at: m.created_at, seen };
+}
+
+// Formato de uma notificação enviado ao navegador.
+export function notificationView(n) {
+  return { id: n.id, kind: n.kind, title: n.title, body: n.body, screen: n.screen, param: n.param, read: Boolean(n.read_at), created_at: n.created_at };
+}
+
+// hub é o distribuidor de eventos em tempo real; sem ele (scripts e testes de regra), os eventos são ignorados.
+export function createServices(db, config, hub = { send() {} }) {
   // Reservas aguardando pagamento por mais de 15 minutos liberam o horário.
   function expirePending() {
     const now = Date.now();
@@ -60,11 +74,67 @@ export function createServices(db, config) {
   }
 
   // Grava uma mensagem no chat. Quem enviou já a vê como lida; mensagens do sistema (sender_id nulo) chegam não lidas para os dois.
+  // Depois de gravada (e da transação confirmada, se houver uma), a mensagem é empurrada em tempo real para os dois lados.
   function pushMessage({ patient_id, pro_id, sender_id = null, kind = 'text', body = '', audio = null, duration = null }) {
     const byPatient = sender_id === patient_id ? 1 : 0;
     const byPro = sender_id === pro_id ? 1 : 0;
-    return db.run(`INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, audio, duration, read_by_patient, read_by_pro)
+    const id = db.run(`INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, audio, duration, read_by_patient, read_by_pro)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, patient_id, pro_id, sender_id, kind, body, audio, duration, byPatient, byPro).lastInsertRowid;
+    if (sender_id && kind !== 'system') notifyMessage({ patient_id, pro_id, sender_id });
+    db.afterCommit(() => publishMessage(id));
+    return id;
+  }
+
+  // Notificação de mensagem nova para quem recebeu. Cada conversa tem um aviso só, que volta ao topo como não lido
+  // a cada mensagem nova ("Fernanda Alves enviou 3 mensagens."). O texto da mensagem não entra na notificação:
+  // o aviso do sistema pode aparecer na tela bloqueada do aparelho, e a conversa é sobre saúde.
+  function notifyMessage({ patient_id, pro_id, sender_id }) {
+    const toPatient = sender_id === pro_id;
+    const to = toPatient ? patient_id : pro_id;
+    const readCol = toPatient ? 'read_by_patient' : 'read_by_pro';
+    const from = db.get('SELECT name FROM users WHERE id = ?', sender_id)?.name || 'Alguém';
+    const n = db.get(`SELECT COUNT(*) n FROM messages WHERE patient_id = ? AND pro_id = ? AND sender_id = ? AND ${readCol} = 0`, patient_id, pro_id, sender_id).n;
+    notify(to, {
+      kind: 'message', title: 'Nova mensagem', body: n > 1 ? `${from} enviou ${n} mensagens.` : `${from} enviou uma mensagem.`,
+      screen: 'chat', param: String(sender_id), ref: `chat:${sender_id}`,
+    });
+  }
+
+  // Cria uma notificação e a empurra em tempo real para as abas do usuário (depois do COMMIT).
+  // Com ref, a notificação do mesmo assunto é reaproveitada: atualiza o texto, volta a ficar não lida e sobe para o topo.
+  // Assim a central não acumula um "Nova mensagem" por mensagem de uma conversa que a pessoa já está lendo.
+  function notify(userId, { kind, title, body = '', screen = null, param = null, ref = null }) {
+    if (!userId) return null;
+    let id = ref ? db.get('SELECT id FROM notifications WHERE user_id = ? AND ref = ? ORDER BY id DESC LIMIT 1', userId, ref)?.id : null;
+    if (id) {
+      db.run("UPDATE notifications SET title = ?, body = ?, read_at = NULL, created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", title, body, id);
+    } else {
+      id = db.run('INSERT INTO notifications(user_id, kind, title, body, screen, param, ref) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        userId, kind, title, body, screen, param, ref).lastInsertRowid;
+    }
+    db.afterCommit(() => {
+      const row = db.get('SELECT * FROM notifications WHERE id = ?', id);
+      if (!row) return;
+      hub.send(userId, 'notification', { notification: notificationView(row) });
+      sendCounts(userId);
+    });
+    return id;
+  }
+
+  // Marca como lidas as notificações de mensagem de uma conversa (quando a pessoa abre a conversa).
+  const readChatNotifications = (userId, otherId) => db.run(
+    "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE user_id = ? AND ref = ? AND read_at IS NULL", userId, `chat:${otherId}`).changes;
+
+  // Evento 'message' para as duas pessoas da conversa (e só para elas). Cada lado recebe o id da conversa
+  // do seu ponto de vista: para o paciente, a conversa é o profissional; para o profissional, o paciente.
+  function publishMessage(id) {
+    const m = db.get('SELECT * FROM messages WHERE id = ?', id);
+    if (!m) return;
+    const message = messageView(m);
+    hub.send(m.patient_id, 'message', { conversation: m.pro_id, message });
+    hub.send(m.pro_id, 'message', { conversation: m.patient_id, message });
+    sendCounts(m.patient_id);
+    sendCounts(m.pro_id);
   }
 
   // Mensagens não lidas do usuário logado (o número que aparece no menu).
@@ -73,6 +143,15 @@ export function createServices(db, config) {
     if (user.role === 'pro') return db.get('SELECT COUNT(*) n FROM messages WHERE pro_id = ? AND read_by_pro = 0', user.id).n;
     return 0;
   }
+
+  // Contadores do menu: mensagens e notificações não lidas.
+  function counts(userId) {
+    const u = db.get('SELECT id, role FROM users WHERE id = ?', userId);
+    if (!u) return { messages: 0, notifications: 0 };
+    return { messages: unreadCount(u), notifications: db.get('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL', userId).n };
+  }
+  // Atualiza os contadores em todas as abas do usuário.
+  const sendCounts = (userId) => hub.send(userId, 'counts', counts(userId));
 
   // A sala de vídeo abre 15 min antes e fecha 60 min depois do início (no modo demo, no dia todo).
   function roomOpen(appt, now = nowSP()) {
@@ -85,5 +164,8 @@ export function createServices(db, config) {
   // Distância aproximada entre o bairro do usuário e o do profissional.
   const distance = (user, pro) => distanceKm(user?.bairro || 'Bela Vista', pro.bairro);
 
-  return { expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, roomOpen, distance };
+  return {
+    expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts,
+    notify, readChatNotifications, roomOpen, distance,
+  };
 }

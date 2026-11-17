@@ -24,11 +24,14 @@ export function startSession(db, config, req, res, userId) {
 export function publicUser(db, svc, u) {
   const base = { id: u.id, role: u.role, name: u.name, email: u.email, bairro: u.bairro, address: u.address, plan: u.plan, plan_since: u.plan_since, is_demo: Boolean(u.is_demo) };
   if (u.role === 'pro') base.pro = svc.getPro(u.id);
-  base.unread = svc.unreadCount(u);
+  // Contadores do menu: mensagens não lidas (unread) e notificações não lidas (notifications).
+  const c = svc.counts(u.id);
+  base.unread = c.messages;
+  base.notifications = c.notifications;
   return base;
 }
 
-export default function authRoutes(r, { db, config, svc }) {
+export default function authRoutes(r, { db, config, svc, hub }) {
   // No máximo 12 tentativas de entrada (e 12 de cadastro) a cada 5 minutos por IP.
   const limit = rateLimiter({ max: 12, windowMs: 5 * 60 * 1000 });
 
@@ -97,10 +100,14 @@ export default function authRoutes(r, { db, config, svc }) {
     return { user: publicUser(db, svc, u) };
   });
 
-  // Saída: apaga a sessão do banco e expira o cookie.
+  // Saída: apaga a sessão do banco, fecha o canal em tempo real dessa sessão e expira o cookie.
   r.post('/api/auth/logout', (req, res) => {
     const token = (req.headers.cookie || '').match(new RegExp(`${COOKIE}=([^;]+)`))?.[1];
-    if (token) db.run('DELETE FROM sessions WHERE token_hash = ?', sha256(decodeURIComponent(token)));
+    if (token) {
+      const hash = sha256(decodeURIComponent(token));
+      db.run('DELETE FROM sessions WHERE token_hash = ?', hash);
+      hub.dropToken(hash);
+    }
     res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
     return { ok: true };
   });

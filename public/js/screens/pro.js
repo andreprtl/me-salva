@@ -1,7 +1,7 @@
 // Telas do profissional: painel, agenda, horários e vagas sociais, perfil e prontuário. Também a administração.
 import {
   S, A, F, I, screen, api, run, replace, refresh, top, closeLayer, confirmSheet, toast,
-  esc, ic, logoMark, avatar, backBtn, brl, brl2, nota, when, dayLabel, DOW, DOWL, chipCheck, toggle, $,
+  esc, ic, logoMark, avatar, backBtn, brl, brl2, nota, when, dayLabel, DOW, DOWL, chipCheck, toggle, $, bellBtn,
 } from '../core.js';
 
 const firstName = (n) => n.replace(/^Dra?\.\s*/, '').split(' ')[0];
@@ -17,7 +17,7 @@ screen('painel', {
     const cur = d.occupancy.at(-1); const first = d.occupancy[0];
     const diff = d.sessions_month - d.sessions_prev;
     const now = new Date();
-    return `<div class="topbar gut only-m"><div class="brand-mini">${logoMark(30)}ME SALVA <span class="tag teal" style="font-family:var(--f-body);letter-spacing:0">Pro</span></div><button class="me-av" data-a="tab" data-v="config" aria-label="Minha conta">${esc(firstName(S.user.name)[0])}</button></div>
+    return `<div class="topbar gut only-m"><div class="brand-mini">${logoMark(30)}ME SALVA <span class="tag teal" style="font-family:var(--f-body);letter-spacing:0">Pro</span></div>${bellBtn()}<button class="me-av" data-a="tab" data-v="config" aria-label="Minha conta">${esc(firstName(S.user.name)[0])}</button></div>
     <header class="bar gut"><div class="bar-t"><div class="eyebrow">${DOWL[now.getDay()]}</div><h1 class="h1">Olá, ${esc(firstName(S.user.name))}</h1></div>${p.status === 'verified' ? `<span class="verif only-d">${ic('verified')}${esc(p.reg)} verificado</span>` : ''}</header>
     <main class="scroll gut">
       ${p.status === 'pending' ? `<div class="banner">${ic('clock')}<div><b>Seu registro está em verificação</b><span>Conferimos ${esc(p.reg)} no cadastro do conselho. Enquanto isso, complete seu perfil e seus horários; seu perfil aparece na busca assim que for aprovado.</span></div></div>` : ''}
@@ -63,7 +63,7 @@ screen('proagenda', {
     const groups = {};
     for (const a of list) (groups[a.start.slice(0, 10)] ||= []).push(a);
     const status = { done: '<span class="pill ok">realizada</span>', no_show: '<span class="pill warn">falta</span>', confirmed: '<span class="pill lav">confirmada</span>' };
-    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Agenda</h1></div><button class="btn btn-ghost btn-sm" data-a="tab" data-v="horarios">${ic('clock')}Meus horários</button></header>
+    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Agenda</h1></div><button class="btn btn-ghost btn-sm" data-a="tab" data-v="horarios">${ic('clock')}Meus horários</button>${bellBtn()}</header>
     <div class="gut" style="padding-bottom:12px;flex:none"><div class="seg" style="max-width:420px"><button class="${S.proTab === 'up' ? 'on' : ''}" data-a="proTab" data-v="up">Próximas</button><button class="${S.proTab === 'past' ? 'on' : ''}" data-a="proTab" data-v="past">Histórico</button></div></div>
     <main class="scroll gut">${Object.keys(groups).length ? Object.entries(groups).slice(0, 30).map(([day, items]) => `<section class="sec"><div class="lbl">${dayLabel(day)}</div><div class="list">${items.map((a) => `<div class="li static" style="flex-wrap:wrap">
         <b class="num" style="width:46px">${a.start.slice(11)}</b>
@@ -101,7 +101,7 @@ screen('horarios', {
 function paintHorarios() {
   const d = top().d; const p = d.pro; const sc = S.soc;
   const net = Math.round(sc.weekly * 4 * sc.price * 100 * 0.88);
-  $('#screen').innerHTML = `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Horários e vagas sociais</h1></div></header>
+  $('#screen').innerHTML = `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Horários e vagas sociais</h1></div>${bellBtn()}</header>
   <main class="scroll gut">
     <section class="sec"><div class="sec-h"><h2 class="h2">Disponibilidade semanal</h2><span class="small muted">${S.av.size} horários por semana</span></div>
       <p class="small muted" style="margin:0">Toque nos horários em que você atende. Sessões de 50 minutos começando na hora cheia.</p>
@@ -147,7 +147,7 @@ screen('properfil', {
   load: () => api('/api/pro/profile'),
   view: (_, d) => {
     const p = d.pro; const m = S.meta;
-    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Meu perfil</h1></div>${p.status === 'verified' ? `<button class="btn btn-ghost btn-sm" data-a="go" data-v="perfil" data-p="${p.id}">${ic('eye')}Ver como paciente</button>` : ''}</header>
+    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Profissional</div><h1 class="h1">Meu perfil</h1></div>${p.status === 'verified' ? `<button class="btn btn-ghost btn-sm" data-a="go" data-v="perfil" data-p="${p.id}">${ic('eye')}Ver como paciente</button>` : ''}${bellBtn()}</header>
     <main class="scroll gut"><form class="form" data-f="proPerfil" novalidate>
       <section class="card form">
         <div class="row">${avatar(p.name, p.color, 56)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(p.reg)} · ${p.status === 'verified' ? 'verificado' : p.status === 'pending' ? 'em verificação' : 'não confirmado'}</div></div></div>
@@ -228,13 +228,19 @@ screen('admin', {
       </tbody></table></div>` : `<div class="card small muted">Nenhum cadastro aguardando verificação.</div>`}
     </section>
     <section class="card sec"><h2 class="h2">Modelo de receita</h2><dl class="kv"><dt>Comissão por sessão</dt><dd>12% do valor, descontados do profissional</dd><dt>Me Salva+ (pacientes)</dt><dd>R$ 19,90/mês, com 10% de desconto custeado pela plataforma</dd><dt>Triagens realizadas</dt><dd>${d.triages_total}</dd></dl></section>
-    ${d.demo_mode ? `<section class="card sec"><h2 class="h2">Dados de demonstração</h2><p class="small muted" style="margin:0">Apaga tudo e recria as contas e o histórico fictícios, com sessões para hoje. Use antes de cada apresentação.</p><button class="btn btn-ghost" data-a="resetDemo" style="align-self:flex-start">${ic('refresh')}Restaurar dados de demonstração</button></section>` : ''}
+    ${d.demo_mode ? `<section class="card sec"><h2 class="h2">Dados de demonstração</h2><p class="small muted" style="margin:0">Apaga tudo e recria as contas e o histórico fictícios, com sessões para hoje. Use antes de cada apresentação.</p><button class="btn btn-ghost" data-a="resetDemo" style="align-self:flex-start">${ic('refresh')}Restaurar dados de demonstração</button></section>
+    <section class="card sec"><h2 class="h2">Lembretes de sessão</h2><p class="small muted" style="margin:0">O servidor confere a cada minuto e manda um lembrete 24 horas e outro 1 hora antes de cada sessão confirmada. Para a apresentação, este botão antecipa o lembrete de 1 hora das sessões que começam nas próximas 3 horas.</p><button class="btn btn-ghost" data-a="runReminders" style="align-self:flex-start">${ic('bell')}Disparar lembretes agora</button></section>` : ''}
   </main>`,
 });
 // Aprova ou recusa o registro de um profissional pendente.
 A.verify = (el) => run(async () => {
   await api(`/api/admin/pros/${el.dataset.v}/verify`, { method: 'POST', body: { decision: el.dataset.d } });
   toast(el.dataset.d === 'verified' ? 'Registro aprovado. O perfil já aparece na busca.' : 'Cadastro recusado.'); refresh();
+}, el);
+// Antecipa os lembretes (só no modo demonstração). Eles chegam em tempo real às contas abertas.
+A.runReminders = (el) => run(async () => {
+  const r = await api('/api/admin/reminders/run', { method: 'POST' });
+  toast(r.sent ? `${r.sent} ${r.sent === 1 ? 'lembrete enviado' : 'lembretes enviados'}.` : 'Nenhum lembrete pendente para as próximas 3 horas.');
 }, el);
 A.resetDemo = () => confirmSheet({ title: 'Restaurar dados de demonstração?', text: 'Todos os dados atuais serão apagados e as contas fictícias recriadas. Você precisará entrar de novo.', ok: 'Restaurar', danger: true }, async () => {
   await api('/api/admin/reset-demo', { method: 'POST' });

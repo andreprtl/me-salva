@@ -1,9 +1,11 @@
 // Telas comuns: entrada, login, cadastro, configurações, mensagens e sala de vídeo.
 import {
-  S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, resetTo, refresh, top, homeOf, every, onLeave,
+  S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, resetTo, refresh, top, homeOf, every, later, onLeave,
   openLayer, closeLayer, confirmSheet, toast, esc, ic, wordmark, logoMark, avatar, backBtn, chipCheck, toggle,
-  msgTime, when, setTheme, isDark, downloadBlob, copyText, $, repaintShell,
+  msgTime, when, setTheme, isDark, downloadBlob, copyText, $, bellBtn,
 } from '../core.js';
+import { onLive, startLive, stopLive, setCounts } from '../realtime.js';
+import { notifyRow } from './notifications.js';
 
 // Layout de computador a partir de 960 px de largura.
 const wide = () => matchMedia('(min-width: 960px)').matches;
@@ -42,10 +44,12 @@ screen('entrada', {
   </div>`,
 });
 
-// Depois de entrar ou se cadastrar: guarda o usuário e abre a tela inicial do perfil.
+// Depois de entrar ou se cadastrar: guarda o usuário, abre o canal em tempo real e a tela inicial do perfil.
 async function afterLogin(user) {
   S.user = user;
   S.unread = user.unread || 0;
+  S.notif = user.notifications || 0;
+  startLive();
   tab(homeOf(user));
 }
 // Entra com uma conta de demonstração (senha demo1234).
@@ -159,7 +163,7 @@ screen('config', {
   tabs: true, width: 'narrow',
   view: () => {
     const u = S.user;
-    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Conta</div><h1 class="h1">Configurações</h1></div></header>
+    return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Conta</div><h1 class="h1">Configurações</h1></div>${u.role === 'admin' ? '' : bellBtn()}</header>
     <main class="scroll gut">
       ${u.is_demo ? `<div class="banner">${ic('info')}<div><b>Conta de demonstração</b><span>Os dados desta conta são fictícios.</span></div></div>` : ''}
       <form class="card form" data-f="perfil">
@@ -173,6 +177,7 @@ screen('config', {
       </form>
       <section class="sec"><div class="lbl">Aparência</div><div class="list">
         <div class="li static">${ic('moon')}<div class="li-t"><b>Tema escuro</b><span>O tema claro é o padrão da plataforma</span></div>${toggle('theme', isDark(), 'Tema escuro')}</div></div></section>
+      ${u.role === 'admin' ? '' : `<section class="sec"><div class="lbl">Avisos</div><div class="list">${notifyRow()}</div></section>`}
       ${u.role === 'patient' ? `<section class="sec"><div class="lbl">Plano</div><div class="list"><button class="li" data-a="tab" data-v="planos">${ic('crown')}<div class="li-t"><b>Meu plano</b><span>${u.plan === 'plus' ? 'Me Salva+ · R$ 19,90/mês' : 'Gratuito'}</span></div>${ic('chevR')}</button>
         <button class="li" data-a="tri">${ic('sparkle')}<div class="li-t"><b>Refazer triagem</b><span>Atualize suas necessidades e preferências</span></div>${ic('chevR')}</button></div></section>` : ''}
       <section class="sec"><div class="lbl">Privacidade e dados (LGPD)</div><div class="list">
@@ -183,7 +188,7 @@ screen('config', {
         <button class="li" data-a="crise">${ic('lifebuoy')}<div class="li-t"><b>Ajuda imediata</b><span>CVV 188 · SAMU 192</span></div>${ic('chevR')}</button>
         <button class="li" data-a="logout">${ic('logout')}<div class="li-t"><b>Sair</b><span>Encerrar a sessão neste aparelho</span></div></button>
       </div></section>
-      <div class="small muted" style="text-align:center">Me Salva · MVP 0.1 · projeto acadêmico</div>
+      <div class="small muted" style="text-align:center">Me Salva · versão 1.1 · projeto acadêmico</div>
     </main>`;
   },
 });
@@ -202,9 +207,9 @@ A.exportData = (el) => run(async () => {
 }, el);
 A.deleteAccount = () => confirmSheet({ title: 'Excluir sua conta?', text: 'Seus dados, mensagens e triagens serão apagados. Sessões futuras serão canceladas. Esta ação não pode ser desfeita.', input: 'Digite EXCLUIR para confirmar', ok: 'Excluir conta', danger: true }, async (v) => {
   await api('/api/me', { method: 'DELETE', body: { confirm: String(v || '').trim().toUpperCase() } });
-  S.user = null; closeLayer(); resetTo('entrada'); toast('Conta excluída.');
+  stopLive(); S.user = null; closeLayer(); resetTo('entrada'); toast('Conta excluída.');
 });
-A.logout = (el) => run(async () => { await api('/api/auth/logout', { method: 'POST' }); S.user = null; S.call = null; resetTo('entrada'); }, el);
+A.logout = (el) => run(async () => { await api('/api/auth/logout', { method: 'POST' }); stopLive(); S.user = null; S.call = null; resetTo('entrada'); }, el);
 
 /* ================= ajuda imediata e menu do celular ================= */
 // Folha de ajuda imediata com telefones de emergência (CVV 188), acessível em todas as telas.
@@ -231,26 +236,49 @@ LAYERS.drawer = () => `<div class="scrim" data-a="close"></div><nav class="drawe
 // Lista de conversas (à esquerda no computador; tela própria no celular).
 function convList(list, active) {
   if (!list.length) return `<div class="empty" style="padding:30px 16px">${ic('chat')}<div>Nenhuma conversa ainda.${S.user.role === 'patient' ? ' Abra o perfil de um profissional e toque em Mensagem.' : ''}</div></div>`;
-  return `<div class="list chat-list" style="${wide() && active !== undefined ? 'border:0;border-radius:0' : ''}">${list.map((c) => `<button class="li ${c.other.id === active ? 'on' : ''}" data-a="openChat" data-v="${c.other.id}">${avatar(c.other.name, c.other.color, 48)}
+  return `<div class="list chat-list" style="${wide() && active !== undefined ? 'border:0;border-radius:0' : ''}">${list.map((c) => `<button class="li ${c.other.id === active ? 'on' : ''}" data-a="openChat" data-v="${c.other.id}" ${c.other.id === active ? 'aria-current="true"' : ''}>${avatar(c.other.name, c.other.color, 48)}
     <div class="li-t"><b>${esc(c.other.name)}</b><span>${c.last.kind === 'audio' ? 'Mensagem de voz' : (c.last.sender_id === S.user.id ? 'Você: ' : '') + esc(c.last.body)}</span></div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="small muted">${msgTime(c.last.created_at)}</span>${c.unread && c.other.id !== active ? `<span class="unread">${c.unread}</span>` : ''}</div></button>`).join('')}</div>`;
 }
-// Mensagens: lista de conversas.
+// Mensagens: lista de conversas. Mensagens novas reordenam a lista e atualizam as não lidas sozinhas.
 screen('chats', {
   tabs: true, nav: 'chats',
   load: () => api('/api/conversations'),
   view: (_, d) => {
-    const head = `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Conversas</div><h1 class="h1">Mensagens</h1></div></header>`;
-    if (wide()) return head + `<div class="split"><div class="split-list">${convList(d.conversations, null)}</div><div class="split-main"><div class="pick"><div>${ic('chat')}<p style="margin:8px 0 0">Escolha uma conversa para abrir.</p><p class="small" style="margin:4px 0 0">${ic('lock')} As mensagens ficam protegidas e só você e o profissional têm acesso.</p></div></div></div></div>`;
-    return head + `<main class="scroll gut">${convList(d.conversations)}<div class="disclaimer">${ic('lock')}<span>Só você e o profissional têm acesso às mensagens. Este chat não é para emergências: ligue 188 (CVV).</span></div></main>`;
+    const head = `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Conversas</div><h1 class="h1">Mensagens</h1></div>${bellBtn()}</header>`;
+    if (wide()) return head + `<div class="split"><div class="split-list" id="convs">${convList(d.conversations, null)}</div><div class="split-main"><div class="pick"><div>${ic('chat')}<p style="margin:8px 0 0">Escolha uma conversa para abrir.</p><p class="small" style="margin:4px 0 0">${ic('lock')} As mensagens ficam protegidas e só você e o profissional têm acesso.</p></div></div></div></div>`;
+    return head + `<main class="scroll gut"><div id="convs">${convList(d.conversations)}</div><div class="disclaimer">${ic('lock')}<span>Só você e o profissional têm acesso às mensagens. Este chat não é para emergências: ligue 188 (CVV).</span></div></main>`;
+  },
+  after: () => {
+    onLeave(onLive('message', refreshConvs));
+    onLeave(onLive('_open', refreshConvs));
+    every(() => { if (!S.live) refreshConvs(); }, 15000); // reserva sem o canal em tempo real
   },
 });
+// Busca a lista de conversas e redesenha só a lista (sem piscar a tela nem apagar o que está sendo digitado).
+// Várias mensagens seguidas geram uma busca só.
+let convT = null;
+function refreshConvs() {
+  clearTimeout(convT);
+  convT = setTimeout(async () => {
+    const t = top();
+    if (!t || (t.n !== 'chats' && t.n !== 'chat')) return;
+    let r;
+    try { r = await api('/api/conversations'); } catch { return; }
+    if (top() !== t || !t.d) return;
+    if (t.n === 'chats') t.d.conversations = r.conversations; else t.d.list = r.conversations;
+    const box = $('#convs');
+    if (box) box.innerHTML = convList(r.conversations, t.n === 'chat' ? t.p : (wide() ? null : undefined));
+  }, 250);
+}
 A.openChat = (el) => {
   const id = Number(el.dataset.v);
   const t = top();
   if (wide() && (t.n === 'chat' || t.n === 'chats')) replace('chat', id); else go('chat', id);
 };
 
+// Marca das minhas mensagens: um tique (enviada) ou dois tiques em destaque (vista pela outra pessoa).
+const tick = (m) => `<span class="tick ${m.seen ? 'seen' : ''}" title="${m.seen ? 'Visto' : 'Enviada'}">${ic(m.seen ? 'checks' : 'check')}<span class="sr">${m.seen ? 'visto' : 'enviada'}</span></span>`;
 // Uma mensagem: texto, áudio com player ou aviso do sistema.
 function bubble(m, me, other) {
   if (m.kind === 'system') return `<div class="e2e">${ic('info')}${esc(m.body)}</div>`;
@@ -258,25 +286,29 @@ function bubble(m, me, other) {
   const cls = mine ? 'me' : 'pro';
   if (m.kind === 'audio') {
     const bars = Array.from({ length: 28 }, (_, i) => `<i style="height:${20 + ((m.id * 7 + i * 13) % 80)}%"></i>`).join('');
-    return `<div class="msg ${cls} audio" data-audio="${m.id}"><button class="au-play" data-a="playAudio" data-v="${m.id}" data-dur="${m.duration}" aria-label="Ouvir áudio">${ic('play', 'fill')}</button><div class="au-wave">${bars}</div><span class="au-time">0:${String(m.duration).padStart(2, '0')}</span></div>`;
+    return `<div class="msg ${cls} audio" data-audio="${m.id}"><button class="au-play" data-a="playAudio" data-v="${m.id}" data-dur="${m.duration}" aria-label="Ouvir áudio">${ic('play', 'fill')}</button><div class="au-wave">${bars}</div><span class="au-time">0:${String(m.duration).padStart(2, '0')}</span>${mine ? tick(m) : ''}</div>`;
   }
-  return `<div class="msg ${cls}">${esc(m.body)}<small>${msgTime(m.created_at)}</small></div>`;
+  return `<div class="msg ${cls}">${esc(m.body)}<small>${msgTime(m.created_at)}${mine ? tick(m) : ''}</small></div>`;
 }
+// Todas as mensagens, com o nome de quem fala quando muda a pessoa e "Visto" embaixo da minha última mensagem lida.
 function bubbles(msgs, me, other) {
   let last = null;
+  const lastMine = msgs.filter((m) => m.sender_id === me && m.kind !== 'system').at(-1);
   return msgs.map((m) => {
     let who = '';
     const key = m.kind === 'system' ? 'sys' : m.sender_id;
     if (key !== last && m.kind !== 'system') who = `<div class="who ${m.sender_id === me ? 'me' : ''}">${m.sender_id === me ? 'VOCÊ' : esc(other.name.split(' ')[0].toUpperCase())}</div>`;
     last = key;
-    return who + bubble(m, me, other);
+    const seen = m === lastMine && m.seen ? `<div class="seen-lbl">${ic('checks')}Visto</div>` : '';
+    return who + bubble(m, me, other) + seen;
   }).join('');
 }
 const composer = () => S.rec
   ? `<button class="round" data-a="recCancel" aria-label="Cancelar gravação">${ic('x')}</button><div class="recbar" id="rectime">Gravando 0:00</div><button class="round send" data-a="recSend" aria-label="Enviar áudio">${ic('send')}</button>`
-  : `<button class="round" data-a="rec" aria-label="Gravar áudio">${ic('mic')}</button><label class="grow"><span class="sr">Mensagem</span><input class="input" id="msgIn" placeholder="Escreva uma mensagem" autocomplete="off" maxlength="2000"></label><button class="round send" data-a="send" aria-label="Enviar">${ic('send')}</button>`;
+  : `<button class="round" data-a="rec" aria-label="Gravar áudio">${ic('mic')}</button><label class="grow"><span class="sr">Mensagem</span><input class="input" id="msgIn" data-i="typing" placeholder="Escreva uma mensagem" autocomplete="off" maxlength="2000"></label><button class="round send" data-a="send" aria-label="Enviar">${ic('send')}</button>`;
 
-// Conversa aberta. No computador, mostra a lista ao lado; busca mensagens novas a cada 3 segundos.
+// Conversa aberta. No computador, mostra a lista ao lado. As mensagens novas, o "digitando…" e o "visto"
+// chegam pelo canal em tempo real; se ele cair, a conversa volta a buscar mensagens novas a cada 3 segundos.
 screen('chat', {
   nav: 'chats',
   load: async (id) => {
@@ -288,37 +320,94 @@ screen('chat', {
     const panel = `<div class="chat-head">${wide() ? '' : backBtn()}${avatar(d.other.name, d.other.color, 40)}<div class="grow"><b style="font-size:15px">${esc(d.other.name)}</b><div class="small muted">${esc(d.other.title)}</div></div>
       ${inCall ? `<button class="btn btn-teal btn-sm" data-a="toCall" style="white-space:nowrap">${ic('video')}Voltar · <span class="num" id="chatcall">${callTime()}</span></button>` : ''}
       ${S.user.role === 'patient' ? `<button class="icon-btn" data-a="go" data-v="perfil" data-p="${d.other.id}" aria-label="Ver perfil">${ic('user')}</button>` : `<button class="icon-btn" data-a="go" data-v="prontuario" data-p="${d.other.id}" aria-label="Prontuário">${ic('file')}</button>`}</div>
-      <div class="msgs" id="msgs"><div class="e2e">${ic('lock')}Só vocês dois têm acesso a esta conversa. Em emergências, ligue 188 (CVV).</div>${bubbles(d.messages, d.me, d.other)}</div>
+      <div class="msgs" id="msgs" aria-live="polite"><div class="e2e">${ic('lock')}Só vocês dois têm acesso a esta conversa. Em emergências, ligue 188 (CVV).</div>${bubbles(d.messages, d.me, d.other)}</div>
+      <div class="typing-row" id="typing" role="status" hidden><span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>${esc(d.other.name.split(' ')[0])} está digitando…</div>
       <div class="composer" id="composer">${composer()}</div>`;
-    if (wide()) return `<header class="bar gut">${S.stack.length > 1 ? backBtn() : ''}<div class="bar-t"><div class="eyebrow">Conversas</div><h1 class="h1">Mensagens</h1></div></header><div class="split"><div class="split-list">${convList(d.list || [], id)}</div><div class="split-main">${panel}</div></div>`;
+    if (wide()) return `<header class="bar gut">${S.stack.length > 1 ? backBtn() : ''}<div class="bar-t"><div class="eyebrow">Conversas</div><h1 class="h1">Mensagens</h1></div></header><div class="split"><div class="split-list" id="convs">${convList(d.list || [], id)}</div><div class="split-main">${panel}</div></div>`;
     return `<div class="split-main">${panel}</div>`;
   },
   after: (id, d) => {
     const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;
-    api('/api/unread').then((r) => { S.unread = r.count; repaintShell(); }).catch(() => {});
-    // Busca mensagens novas a cada 3 segundos enquanto a conversa está aberta.
-    every(async () => {
+    api('/api/unread').then((r) => setCounts({ messages: r.count, notifications: r.notifications })).catch(() => {});
+    // Busca o que chegou depois da última mensagem da tela; abrir a conversa marca tudo como lido (e a outra pessoa vê o "visto").
+    // Com a aba em segundo plano, não busca: a pessoa não está vendo, então a mensagem não pode constar como vista.
+    const pull = async () => {
+      if (document.hidden) return;
       const t = top(); if (t.n !== 'chat' || t.p !== id) return;
       const lastId = t.d.messages.at(-1)?.id || 0;
       try {
         const r = await api(`/api/conversations/${id}?after=${lastId}`);
         if (r.messages.length) appendMsgs(r.messages);
-      } catch { /* tenta de novo no próximo ciclo */ }
-    }, 3000);
+      } catch { /* tenta de novo na próxima vez */ }
+    };
+    // Mensagem nova desta conversa: aparece na hora; se veio da outra pessoa, pull() a marca como lida.
+    onLeave(onLive('message', (ev) => {
+      if (wide()) refreshConvs(); // a lista ao lado reordena e mostra as não lidas das outras conversas
+      if (ev.conversation !== id) return;
+      hideTyping();
+      appendMsgs([ev.message]);
+      if (ev.message.sender_id !== S.user.id) pull();
+    }));
+    // "Visto": a outra pessoa abriu a conversa.
+    onLeave(onLive('read', (ev) => {
+      if (ev.conversation !== id) return;
+      const t = top(); if (t.n !== 'chat' || t.p !== id) return;
+      let changed = false;
+      for (const msg of t.d.messages) if (msg.sender_id === S.user.id && msg.id <= ev.upTo && !msg.seen) { msg.seen = true; changed = true; }
+      if (changed) repaintMsgs();
+    }));
+    onLeave(onLive('typing', (ev) => { if (ev.conversation === id) showTyping(); }));
+    onLeave(onLive('_open', pull)); // o canal voltou: busca o que chegou durante a queda
+    // Voltou para a aba: marca como lido o que chegou enquanto ela estava em segundo plano.
+    const onVisible = () => { if (!document.hidden) pull(); };
+    document.addEventListener('visibilitychange', onVisible);
+    onLeave(() => document.removeEventListener('visibilitychange', onVisible));
+    // Reserva: sem o canal em tempo real, busca mensagens novas a cada 3 segundos (como na v1.0).
+    every(() => { if (!S.live) pull(); }, 3000);
     if (S.call) every(() => { const el = $('#chatcall'); if (el) el.textContent = callTime(); }, 1000);
     $('#msgIn')?.focus();
   },
 });
-// Acrescenta mensagens novas sem redesenhar a conversa inteira.
+// "Fulana está digitando…" por 4 s depois do último aviso.
+let typingT = null;
+function showTyping() {
+  const el = $('#typing'); if (!el) return;
+  const box = $('#msgs');
+  const atBottom = box && box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  el.hidden = false;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+  clearTimeout(typingT);
+  typingT = later(hideTyping, 4000);
+}
+function hideTyping() { const el = $('#typing'); if (el) el.hidden = true; }
+// Avisa a outra pessoa que estou digitando (no máximo a cada 2,5 s).
+let typingSent = 0;
+I.typing = (el) => {
+  const t = top();
+  if (t?.n !== 'chat' || !el.value.trim() || Date.now() - typingSent < 2500) return;
+  typingSent = Date.now();
+  fetch(`/api/conversations/${t.p}/typing`, { method: 'POST', credentials: 'same-origin', headers: { 'x-ms-client': 'web' } }).catch(() => {});
+};
+// Acrescenta mensagens novas sem redesenhar a conversa inteira (o que está sendo digitado não se perde).
+// Mensagens que já estão na tela são ignoradas: a mesma mensagem pode chegar pelo canal e pela busca.
 function appendMsgs(msgs) {
   const t = top(); const d = t.d;
+  if (t.n !== 'chat' || !d) return;
   const fresh = msgs.filter((m) => !d.messages.some((x) => x.id === m.id));
   if (!fresh.length) return;
   d.messages.push(...fresh);
+  d.messages.sort((a, b) => a.id - b.id);
+  repaintMsgs(fresh.some((m) => m.sender_id === S.user.id));
+}
+// Redesenha as mensagens. Desce até o fim se a pessoa já estava no fim da conversa ou se acabou de enviar algo;
+// se ela subiu para reler, a posição é mantida.
+function repaintMsgs(toEnd = false) {
+  const d = top().d;
   const box = $('#msgs');
   if (!box) return;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.innerHTML = `<div class="e2e">${ic('lock')}Só vocês dois têm acesso a esta conversa. Em emergências, ligue 188 (CVV).</div>${bubbles(d.messages, d.me, d.other)}`;
-  box.scrollTop = box.scrollHeight;
+  if (atBottom || toEnd) box.scrollTop = box.scrollHeight;
 }
 // Envia uma mensagem de texto.
 A.send = (el) => run(async () => {

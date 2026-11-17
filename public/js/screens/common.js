@@ -2,7 +2,7 @@
 import {
   S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, resetTo, refresh, top, homeOf, every, later, onLeave,
   openLayer, closeLayer, confirmSheet, toast, esc, ic, wordmark, logoMark, avatar, backBtn, chipCheck, toggle,
-  msgTime, when, setTheme, isDark, downloadBlob, copyText, $, repaintShell, bellBtn,
+  msgTime, when, setTheme, isDark, downloadBlob, copyText, $, bellBtn,
 } from '../core.js';
 import { onLive, startLive, stopLive, setCounts } from '../realtime.js';
 import { notifyRow } from './notifications.js';

@@ -8,6 +8,7 @@ import { COOKIE } from './guards.js';
 export { COOKIE, requireUser, requireRole } from './guards.js';
 import { createServices } from './services.js';
 import { createHub } from './realtime.js';
+import { createReminders } from './reminders.js';
 import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import catalogRoutes from './routes/catalog.js';
@@ -29,12 +30,14 @@ const CSP = [
 
 // Recebe o banco, a configuração e a chave do prontuário e devolve o handler HTTP.
 // Os testes usam esta mesma função com um banco temporário.
-// O handler devolvido carrega handle.ctx (banco, serviços, hub) e handle.close(), que encerra as conexões em tempo real.
+// O handler devolvido carrega handle.ctx (banco, serviços, hub, lembretes) e handle.close(), que encerra as conexões
+// em tempo real. A conferência automática dos lembretes é ligada no server.js (os testes a chamam com horário fixo).
 export function createApp({ db, config, notesKey }) {
   const router = createRouter();
   const hub = createHub({ db, heartbeatMs: config.heartbeatMs });
   const svc = createServices(db, config, hub);
-  const ctx = { db, config, svc, notesKey, hub };
+  const reminders = createReminders({ db, svc });
+  const ctx = { db, config, svc, notesKey, hub, reminders };
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
   for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));

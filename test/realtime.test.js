@@ -307,3 +307,70 @@ test('notificações: aprovar o registro avisa o profissional na hora', async ()
     assert.equal(n.data.notification.screen, 'painel');
   } finally { sb.close(); }
 });
+
+// Cria uma sessão direto no banco (para testar os lembretes com horários fixos).
+function addAppt(patientId, proId, start, status = 'confirmed', modality = 'online') {
+  return db.run(`INSERT INTO appointments(patient_id, pro_id, start, modality, social, base_price, amount, fee, pro_amount, status, room)
+                 VALUES (?, ?, ?, ?, 0, 9000, 9000, 1080, 7920, ?, 'MeSalva-teste')`, patientId, proId, start, modality, status).lastInsertRowid;
+}
+
+test('lembretes: 24 h e 1 h antes, uma vez só, com aviso no chat e notificação em tempo real para os dois', async () => {
+  const mariana = await login('mariana@demo.mesalva.app');
+  const rafael = await login('rafael.nunes@demo.mesalva.app');
+  const { reminders } = app.ctx;
+  const mId = mariana.user.id; const rId = rafael.user.id;
+  const appt = addAppt(mId, rId, '2030-01-10T10:00');
+  const cancelled = addAppt(mId, rId, '2030-01-10T11:00', 'cancelled');
+  const pending = addAppt(mId, rId, '2030-01-10T12:00', 'pending_payment');
+  const mine = (sent) => sent.filter((s) => [appt, cancelled, pending].includes(s.appointment_id));
+  const sm = stream(mariana); const sr = stream(rafael);
+  try {
+    await Promise.all([sm.waitFor('hello'), sr.waitFor('hello')]);
+    assert.deepEqual(mine(reminders.run({ now: '2030-01-09T09:30' })), [], 'faltando mais de 24 h, nada');
+    assert.deepEqual(mine(reminders.run({ now: '2030-01-09T10:30' })), [{ appointment_id: appt, kind: '24h' }]);
+    assert.deepEqual(mine(reminders.run({ now: '2030-01-09T10:31' })), [], 'o de 24 h não se repete');
+    assert.deepEqual(mine(reminders.run({ now: '2030-01-10T09:00' })), [{ appointment_id: appt, kind: '1h' }]);
+    assert.deepEqual(mine(reminders.run({ now: '2030-01-10T09:30' })), [], 'o de 1 h não se repete');
+
+    // Chegaram em tempo real para a paciente e para o profissional.
+    const toPatient = await sm.waitFor('notification', (d) => d.notification.kind === 'reminder' && d.notification.body.includes('10/01'));
+    assert.equal(toPatient.data.notification.body, 'Sua sessão com Rafael Nunes é amanhã (10/01) às 10:00 (online).');
+    const toPro = await sr.waitFor('notification', (d) => d.notification.kind === 'reminder' && d.notification.body.includes('hoje (10/01)'));
+    assert.equal(toPro.data.notification.body, 'Sessão com Mariana Souza hoje (10/01) às 10:00 (online).');
+    await sm.waitFor('message', (d) => d.conversation === rId && d.message.body.startsWith('Lembrete: a sessão é hoje (10/01) às 10:00'));
+
+    // No banco: dois avisos no chat e dois registros de lembrete para a sessão; nada para a cancelada e a pendente.
+    const chat = db.all("SELECT body FROM messages WHERE patient_id = ? AND pro_id = ? AND kind = 'system' AND body LIKE 'Lembrete:%10/01%'", mId, rId);
+    assert.equal(chat.length, 2);
+    assert.equal(db.get('SELECT COUNT(*) n FROM reminders WHERE appointment_id = ?', appt).n, 2);
+    assert.equal(db.get('SELECT COUNT(*) n FROM reminders WHERE appointment_id IN (?, ?)', cancelled, pending).n, 0);
+  } finally { sm.close(); sr.close(); }
+});
+
+test('lembretes: quem marca em cima da hora recebe só o de 1 h', () => {
+  const mId = db.get("SELECT id FROM users WHERE email = 'mariana@demo.mesalva.app'").id;
+  const pro = db.get("SELECT id FROM users WHERE email = 'bruno.correa@exemplo.mesalva.app'").id;
+  const appt = addAppt(mId, pro, '2030-02-01T18:00');
+  const sent = app.ctx.reminders.run({ now: '2030-02-01T17:10' }).filter((s) => s.appointment_id === appt);
+  assert.deepEqual(sent, [{ appointment_id: appt, kind: '1h' }]);
+  assert.equal(db.get("SELECT COUNT(*) n FROM reminders WHERE appointment_id = ? AND kind = '24h'", appt).n, 0);
+});
+
+test('lembretes: o botão da demonstração antecipa o de 1 h, não duplica e é só da administração', async () => {
+  const mariana = await login('mariana@demo.mesalva.app');
+  const admin = await login('admin@demo.mesalva.app');
+  const pro = db.get("SELECT id FROM users WHERE email = 'pedro.henrique.castro@exemplo.mesalva.app'").id;
+  // Daqui a 2h30 (minuto ímpar para não colidir com os horários cheios dos dados de demonstração).
+  const { nowSP, toMinutes, fromMinutes } = await import('../src/time.js');
+  const start = fromMinutes(toMinutes(nowSP()) + 150).slice(0, 15) + '7';
+  const appt = addAppt(mariana.user.id, pro, start);
+  app.ctx.reminders.run(); // a conferência normal manda só o de 24 h
+  assert.equal(db.get("SELECT COUNT(*) n FROM reminders WHERE appointment_id = ? AND kind = '1h'", appt).n, 0);
+
+  assert.equal((await mariana('/api/admin/reminders/run', { method: 'POST' })).status, 403);
+  const first = await admin('/api/admin/reminders/run', { method: 'POST' });
+  assert.equal(first.status, 200);
+  assert.ok(first.data.sent >= 1);
+  await admin('/api/admin/reminders/run', { method: 'POST' });
+  assert.equal(db.get("SELECT COUNT(*) n FROM reminders WHERE appointment_id = ? AND kind = '1h'", appt).n, 1, 'apertar de novo não duplica');
+});

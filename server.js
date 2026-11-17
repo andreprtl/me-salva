@@ -1,6 +1,6 @@
 // Ponto de entrada do servidor (`npm start`).
 // Abre o banco SQLite em data/, carrega a chave do prontuário, cria os dados de demonstração
-// se o banco estiver vazio e começa a atender em http://localhost:PORT.
+// se o banco estiver vazio, liga a conferência de lembretes (a cada minuto) e começa a atender em http://localhost:PORT.
 import { createServer } from 'node:http';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,13 +22,16 @@ if (db.get('SELECT COUNT(*) n FROM users').n === 0) {
 }
 
 // createApp devolve a função (req, res) que trata cada requisição HTTP.
-const server = createServer(createApp({ db, config, notesKey }));
+const app = createApp({ db, config, notesKey });
+const server = createServer(app);
+// Lembretes de sessão 24 h e 1 h antes: confere agora e depois a cada minuto.
+const stopReminders = app.ctx.reminders.start();
 server.listen(config.port, () => {
   console.log(`Me Salva rodando em http://localhost:${config.port}`);
   if (config.demoMode) console.log('Modo demonstração ativo (DEMO_MODE=true).');
 });
 
-// Encerramento limpo (Ctrl+C ou parada do serviço): fecha o servidor e o banco.
-const stop = () => { server.close(); db.close(); process.exit(0); };
+// Encerramento limpo (Ctrl+C ou parada do serviço): para os lembretes, fecha as conexões em tempo real, o servidor e o banco.
+const stop = () => { stopReminders(); app.close(); server.close(); db.close(); process.exit(0); };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);

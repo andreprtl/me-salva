@@ -4,8 +4,9 @@ import { HttpError } from '../http.js';
 import { nowSP } from '../time.js';
 import { oneOf, bad } from '../validate.js';
 import { seedDemo } from '../seed.js';
+import { DEMO_AHEAD_MIN } from '../reminders.js';
 
-export default function adminRoutes(r, { db, config, svc, hub, notesKey }) {
+export default function adminRoutes(r, { db, config, svc, hub, reminders, notesKey }) {
   const onlyAdmin = requireRole('admin');
 
   // Indicadores do mês e a fila de profissionais aguardando verificação.
@@ -42,6 +43,13 @@ export default function adminRoutes(r, { db, config, svc, hub, notesKey }) {
     });
     svc.audit(req.user.id, 'pro.' + decision, String(id));
     return { ok: true };
+  });
+
+  // "Disparar lembretes agora" (só no modo demonstração). O servidor já confere os lembretes a cada minuto;
+  // este botão antecipa o lembrete de 1 h das sessões das próximas 3 horas, para mostrar na apresentação.
+  r.post('/api/admin/reminders/run', onlyAdmin, () => {
+    if (!config.demoMode) throw bad('Disponível só no modo de demonstração.');
+    return { sent: reminders.run({ ahead: DEMO_AHEAD_MIN }).length, ahead_minutes: DEMO_AHEAD_MIN };
   });
 
   // Apaga tudo e recria os dados fictícios (só no modo demonstração).

@@ -85,9 +85,9 @@ export function createServices(db, config, hub = { send() {} }) {
     return id;
   }
 
-  // Notificação de mensagem nova para quem recebeu. Mensagens não lidas da mesma conversa viram um aviso só
-  // ("Fernanda Alves enviou 3 mensagens."). O texto da mensagem não entra na notificação: o aviso do sistema
-  // pode aparecer na tela bloqueada do aparelho, e a conversa é sobre saúde.
+  // Notificação de mensagem nova para quem recebeu. Cada conversa tem um aviso só, que volta ao topo como não lido
+  // a cada mensagem nova ("Fernanda Alves enviou 3 mensagens."). O texto da mensagem não entra na notificação:
+  // o aviso do sistema pode aparecer na tela bloqueada do aparelho, e a conversa é sobre saúde.
   function notifyMessage({ patient_id, pro_id, sender_id }) {
     const toPatient = sender_id === pro_id;
     const to = toPatient ? patient_id : pro_id;
@@ -101,12 +101,13 @@ export function createServices(db, config, hub = { send() {} }) {
   }
 
   // Cria uma notificação e a empurra em tempo real para as abas do usuário (depois do COMMIT).
-  // Com ref, uma notificação ainda não lida do mesmo assunto é atualizada em vez de duplicada.
+  // Com ref, a notificação do mesmo assunto é reaproveitada: atualiza o texto, volta a ficar não lida e sobe para o topo.
+  // Assim a central não acumula um "Nova mensagem" por mensagem de uma conversa que a pessoa já está lendo.
   function notify(userId, { kind, title, body = '', screen = null, param = null, ref = null }) {
     if (!userId) return null;
-    let id = ref ? db.get('SELECT id FROM notifications WHERE user_id = ? AND ref = ? AND read_at IS NULL', userId, ref)?.id : null;
+    let id = ref ? db.get('SELECT id FROM notifications WHERE user_id = ? AND ref = ? ORDER BY id DESC LIMIT 1', userId, ref)?.id : null;
     if (id) {
-      db.run("UPDATE notifications SET title = ?, body = ?, created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", title, body, id);
+      db.run("UPDATE notifications SET title = ?, body = ?, read_at = NULL, created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", title, body, id);
     } else {
       id = db.run('INSERT INTO notifications(user_id, kind, title, body, screen, param, ref) VALUES (?, ?, ?, ?, ?, ?, ?)',
         userId, kind, title, body, screen, param, ref).lastInsertRowid;

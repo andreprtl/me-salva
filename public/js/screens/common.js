@@ -321,7 +321,7 @@ screen('chat', {
       ${inCall ? `<button class="btn btn-teal btn-sm" data-a="toCall" style="white-space:nowrap">${ic('video')}Voltar · <span class="num" id="chatcall">${callTime()}</span></button>` : ''}
       ${S.user.role === 'patient' ? `<button class="icon-btn" data-a="go" data-v="perfil" data-p="${d.other.id}" aria-label="Ver perfil">${ic('user')}</button>` : `<button class="icon-btn" data-a="go" data-v="prontuario" data-p="${d.other.id}" aria-label="Prontuário">${ic('file')}</button>`}</div>
       <div class="msgs" id="msgs" aria-live="polite"><div class="e2e">${ic('lock')}Só vocês dois têm acesso a esta conversa. Em emergências, ligue 188 (CVV).</div>${bubbles(d.messages, d.me, d.other)}</div>
-      <div class="typing" id="typing" role="status" hidden><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>${esc(d.other.name.split(' ')[0])} está digitando…</div>
+      <div class="typing-row" id="typing" role="status" hidden><span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>${esc(d.other.name.split(' ')[0])} está digitando…</div>
       <div class="composer" id="composer">${composer()}</div>`;
     if (wide()) return `<header class="bar gut">${S.stack.length > 1 ? backBtn() : ''}<div class="bar-t"><div class="eyebrow">Conversas</div><h1 class="h1">Mensagens</h1></div></header><div class="split"><div class="split-list" id="convs">${convList(d.list || [], id)}</div><div class="split-main">${panel}</div></div>`;
     return `<div class="split-main">${panel}</div>`;
@@ -330,7 +330,9 @@ screen('chat', {
     const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;
     api('/api/unread').then((r) => setCounts({ messages: r.count, notifications: r.notifications })).catch(() => {});
     // Busca o que chegou depois da última mensagem da tela; abrir a conversa marca tudo como lido (e a outra pessoa vê o "visto").
+    // Com a aba em segundo plano, não busca: a pessoa não está vendo, então a mensagem não pode constar como vista.
     const pull = async () => {
+      if (document.hidden) return;
       const t = top(); if (t.n !== 'chat' || t.p !== id) return;
       const lastId = t.d.messages.at(-1)?.id || 0;
       try {
@@ -356,6 +358,10 @@ screen('chat', {
     }));
     onLeave(onLive('typing', (ev) => { if (ev.conversation === id) showTyping(); }));
     onLeave(onLive('_open', pull)); // o canal voltou: busca o que chegou durante a queda
+    // Voltou para a aba: marca como lido o que chegou enquanto ela estava em segundo plano.
+    const onVisible = () => { if (!document.hidden) pull(); };
+    document.addEventListener('visibilitychange', onVisible);
+    onLeave(() => document.removeEventListener('visibilitychange', onVisible));
     // Reserva: sem o canal em tempo real, busca mensagens novas a cada 3 segundos (como na v1.0).
     every(() => { if (!S.live) pull(); }, 3000);
     if (S.call) every(() => { const el = $('#chatcall'); if (el) el.textContent = callTime(); }, 1000);

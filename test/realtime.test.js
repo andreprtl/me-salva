@@ -272,6 +272,15 @@ test('notificações: mensagens da mesma conversa viram um aviso só, sem o text
     const after2 = await mariana('/api/notifications');
     assert.equal(after2.data.unread, before - 1);
     assert.ok(after2.data.notifications.find((n) => n.id === chatNotes[0].id).read);
+
+    // Mensagem nova depois de lida: o mesmo aviso volta a ficar não lido (a central não acumula um por mensagem).
+    await fernanda(`/api/conversations/${mId}`, { method: 'POST', body: { kind: 'text', body: 'Mais uma' } });
+    const after3 = await mariana('/api/notifications');
+    const thread = after3.data.notifications.filter((n) => n.kind === 'message' && n.param === String(fId));
+    assert.equal(thread.length, 1, 'um aviso por conversa');
+    assert.equal(thread[0].id, chatNotes[0].id);
+    assert.equal(thread[0].read, false);
+    assert.equal(thread[0].body, 'Fernanda Alves enviou uma mensagem.');
   } finally { sm.close(); }
 });
 

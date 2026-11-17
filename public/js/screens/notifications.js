@@ -25,7 +25,7 @@ async function loadList() {
   }
 }
 
-const item = (n) => `<button class="np-item ${n.read ? '' : 'unread'}" data-a="openNotif" data-v="${n.id}">
+const item = (n) => `<button class="np-item ${n.read ? '' : 'is-unread'}" data-a="openNotif" data-v="${n.id}">
   <span class="np-ic k-${esc(n.kind)}">${ic(KIND_ICON[n.kind] || 'bell')}</span>
   <span class="grow"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><em>${ago(n.created_at)}</em></span>
   ${n.read ? '' : '<i class="np-dot"><span class="sr">não lida</span></i>'}</button>`;
@@ -72,9 +72,11 @@ onLive('notification', ({ notification: n }) => {
     S.layer.items = [n, ...S.layer.items.filter((x) => x.id !== n.id)];
     renderLayer();
   }
-  // Mensagem da conversa que já está aberta: a própria conversa mostra; nada de aviso extra.
+  // Mensagem da conversa que está aberta e à vista: a própria conversa mostra; nada de aviso extra.
   const t = top();
-  if (n.kind === 'message' && t?.n === 'chat' && String(t.p) === n.param) return;
+  if (n.kind === 'message' && t?.n === 'chat' && String(t.p) === n.param && !document.hidden) return;
+  // Quem acabou de pagar já está vendo a confirmação na tela.
+  if (n.kind === 'confirmed' && ['pagamento', 'pix', 'confirmado'].includes(t?.n) && !document.hidden) return;
   if (document.hidden) systemNotify(n);
   else if (S.layer?.type !== 'notifs') toast(`${n.title}: ${n.body}`);
 });

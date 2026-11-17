@@ -5,7 +5,7 @@ import { str, oneOf, bad } from '../validate.js';
 import { luhn, decrypt } from '../security.js';
 import { BAIRRO_NAMES, PRICING } from '../../public/js/shared/data.js';
 
-export default function meRoutes(r, { db, svc, notesKey }) {
+export default function meRoutes(r, { db, svc, hub, notesKey }) {
   // Usuário logado (ou null). É a primeira chamada da interface ao abrir.
   r.get('/api/me', (req) => ({ user: req.user ? publicUser(db, svc, req.user) : null }));
 
@@ -76,6 +76,7 @@ export default function meRoutes(r, { db, svc, notesKey }) {
       db.run('DELETE FROM users WHERE id = ?', id);
     });
     svc.audit(null, 'account.delete', String(id));
+    hub.dropUser(id); // encerra o canal em tempo real de todas as abas da conta
     res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
     return { ok: true };
   });

@@ -135,7 +135,8 @@ CREATE TABLE IF NOT EXISTS audit(
 );
 `;
 
-// Abre o banco e devolve uma interface pequena: all/get/run com parâmetros '?', exec e tx (transação).
+// Abre o banco e devolve uma interface pequena: all/get/run com parâmetros '?', exec, tx (transação)
+// e afterCommit (avisos em tempo real que só podem sair depois que os dados foram gravados).
 // As consultas preparadas ficam em cache para não serem recompiladas a cada chamada.
 export function openDb(file) {
   const db = new DatabaseSync(file);
@@ -150,17 +151,32 @@ export function openDb(file) {
     if (!s) { s = db.prepare(sql); cache.set(sql, s); }
     return s;
   };
+  // Funções guardadas durante uma transação para rodar só depois do COMMIT (null fora de transação).
+  let pending = null;
+  // Roda uma função pós-gravação sem deixar um erro nela derrubar a requisição que já gravou os dados.
+  const safely = (fn) => { try { fn(); } catch (e) { console.error(e); } };
   return {
     raw: db,
     all: (sql, ...p) => st(sql).all(...p),
     get: (sql, ...p) => st(sql).get(...p),
     run: (sql, ...p) => st(sql).run(...p),
     exec: (sql) => db.exec(sql),
-    // Executa fn numa transação: se der erro no meio, nada é gravado.
+    // Executa fn numa transação: se der erro no meio, nada é gravado e os avisos pendentes são descartados.
     tx(fn) {
       db.exec('BEGIN IMMEDIATE');
-      try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
+      pending = [];
+      try {
+        const r = fn();
+        db.exec('COMMIT');
+        const after = pending;
+        pending = null;
+        after.forEach(safely);
+        return r;
+      } catch (e) { pending = null; db.exec('ROLLBACK'); throw e; }
     },
+    // Dentro de uma transação, adia fn para depois do COMMIT; fora dela, roda na hora.
+    // Assim nenhum evento em tempo real anuncia um dado que acabou desfeito por um ROLLBACK.
+    afterCommit(fn) { if (pending) pending.push(fn); else safely(fn); },
     close: () => db.close(),
   };
 }

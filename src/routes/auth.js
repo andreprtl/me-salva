@@ -28,7 +28,7 @@ export function publicUser(db, svc, u) {
   return base;
 }
 
-export default function authRoutes(r, { db, config, svc }) {
+export default function authRoutes(r, { db, config, svc, hub }) {
   // No máximo 12 tentativas de entrada (e 12 de cadastro) a cada 5 minutos por IP.
   const limit = rateLimiter({ max: 12, windowMs: 5 * 60 * 1000 });
 
@@ -97,10 +97,14 @@ export default function authRoutes(r, { db, config, svc }) {
     return { user: publicUser(db, svc, u) };
   });
 
-  // Saída: apaga a sessão do banco e expira o cookie.
+  // Saída: apaga a sessão do banco, fecha o canal em tempo real dessa sessão e expira o cookie.
   r.post('/api/auth/logout', (req, res) => {
     const token = (req.headers.cookie || '').match(new RegExp(`${COOKIE}=([^;]+)`))?.[1];
-    if (token) db.run('DELETE FROM sessions WHERE token_hash = ?', sha256(decodeURIComponent(token)));
+    if (token) {
+      const hash = sha256(decodeURIComponent(token));
+      db.run('DELETE FROM sessions WHERE token_hash = ?', hash);
+      hub.dropToken(hash);
+    }
     res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
     return { ok: true };
   });

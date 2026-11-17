@@ -1,4 +1,5 @@
 // Consultas e regras reaproveitadas por várias rotas (criadas uma vez em createApp e passadas como ctx.svc).
+// Também é aqui que as gravações viram eventos em tempo real (hub, em realtime.js).
 import { json } from './db.js';
 import { nowSP, toMinutes } from './time.js';
 import { buildSlots } from './slots.js';
@@ -7,7 +8,15 @@ import { BAIRROS, distanceKm } from '../public/js/shared/data.js';
 // Status que ocupam um horário na agenda (uma sessão cancelada libera o horário).
 const ACTIVE = "('pending_payment','confirmed','done','no_show')";
 
-export function createServices(db, config) {
+// Formato de uma mensagem enviado ao navegador; o áudio em si é baixado à parte em /api/messages/:id/audio.
+// seen ("visto"): a outra pessoa da conversa já abriu a mensagem. Mensagens do sistema não têm visto.
+export function messageView(m) {
+  const seen = m.kind !== 'system' && Boolean(m.sender_id === m.patient_id ? m.read_by_pro : m.read_by_patient);
+  return { id: m.id, sender_id: m.sender_id, kind: m.kind, body: m.body, duration: m.duration, created_at: m.created_at, seen };
+}
+
+// hub é o distribuidor de eventos em tempo real; sem ele (scripts e testes de regra), os eventos são ignorados.
+export function createServices(db, config, hub = { send() {} }) {
   // Reservas aguardando pagamento por mais de 15 minutos liberam o horário.
   function expirePending() {
     const now = Date.now();
@@ -60,11 +69,26 @@ export function createServices(db, config) {
   }
 
   // Grava uma mensagem no chat. Quem enviou já a vê como lida; mensagens do sistema (sender_id nulo) chegam não lidas para os dois.
+  // Depois de gravada (e da transação confirmada, se houver uma), a mensagem é empurrada em tempo real para os dois lados.
   function pushMessage({ patient_id, pro_id, sender_id = null, kind = 'text', body = '', audio = null, duration = null }) {
     const byPatient = sender_id === patient_id ? 1 : 0;
     const byPro = sender_id === pro_id ? 1 : 0;
-    return db.run(`INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, audio, duration, read_by_patient, read_by_pro)
+    const id = db.run(`INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, audio, duration, read_by_patient, read_by_pro)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, patient_id, pro_id, sender_id, kind, body, audio, duration, byPatient, byPro).lastInsertRowid;
+    db.afterCommit(() => publishMessage(id));
+    return id;
+  }
+
+  // Evento 'message' para as duas pessoas da conversa (e só para elas). Cada lado recebe o id da conversa
+  // do seu ponto de vista: para o paciente, a conversa é o profissional; para o profissional, o paciente.
+  function publishMessage(id) {
+    const m = db.get('SELECT * FROM messages WHERE id = ?', id);
+    if (!m) return;
+    const message = messageView(m);
+    hub.send(m.patient_id, 'message', { conversation: m.pro_id, message });
+    hub.send(m.pro_id, 'message', { conversation: m.patient_id, message });
+    sendCounts(m.patient_id);
+    sendCounts(m.pro_id);
   }
 
   // Mensagens não lidas do usuário logado (o número que aparece no menu).
@@ -73,6 +97,15 @@ export function createServices(db, config) {
     if (user.role === 'pro') return db.get('SELECT COUNT(*) n FROM messages WHERE pro_id = ? AND read_by_pro = 0', user.id).n;
     return 0;
   }
+
+  // Contadores do menu: mensagens e notificações não lidas.
+  function counts(userId) {
+    const u = db.get('SELECT id, role FROM users WHERE id = ?', userId);
+    if (!u) return { messages: 0, notifications: 0 };
+    return { messages: unreadCount(u), notifications: 0 };
+  }
+  // Atualiza os contadores em todas as abas do usuário.
+  const sendCounts = (userId) => hub.send(userId, 'counts', counts(userId));
 
   // A sala de vídeo abre 15 min antes e fecha 60 min depois do início (no modo demo, no dia todo).
   function roomOpen(appt, now = nowSP()) {
@@ -85,5 +118,5 @@ export function createServices(db, config) {
   // Distância aproximada entre o bairro do usuário e o do profissional.
   const distance = (user, pro) => distanceKm(user?.bairro || 'Bela Vista', pro.bairro);
 
-  return { expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, roomOpen, distance };
+  return { expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts, roomOpen, distance };
 }

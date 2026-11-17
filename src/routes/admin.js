@@ -5,7 +5,7 @@ import { nowSP } from '../time.js';
 import { oneOf, bad } from '../validate.js';
 import { seedDemo } from '../seed.js';
 
-export default function adminRoutes(r, { db, config, svc, notesKey }) {
+export default function adminRoutes(r, { db, config, svc, hub, notesKey }) {
   const onlyAdmin = requireRole('admin');
 
   // Indicadores do mês e a fila de profissionais aguardando verificação.
@@ -43,6 +43,7 @@ export default function adminRoutes(r, { db, config, svc, notesKey }) {
   r.post('/api/admin/reset-demo', onlyAdmin, () => {
     if (!config.demoMode) throw bad('Disponível só no modo de demonstração.');
     seedDemo(db, { reset: true, notesKey });
+    hub.dropAll(); // as sessões foram apagadas: as abas abertas reconectam e voltam para a tela de entrada
     return { ok: true };
   });
 }

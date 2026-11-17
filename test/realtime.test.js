@@ -11,7 +11,9 @@ import { openDb } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { seedDemo } from '../src/seed.js';
 import { sha256 } from '../src/security.js';
-import { addDays, todaySP } from '../src/time.js';
+import { addDays, todaySP, nowSP, toMinutes, fromMinutes } from '../src/time.js';
+import { createServices } from '../src/services.js';
+import { createReminders } from '../src/reminders.js';
 
 let server; let base; let dir; let db; let app;
 const config = { demoMode: true, videoBaseUrl: 'https://meet.jit.si/', sessionDays: 7, production: false, heartbeatMs: 300 };
@@ -373,4 +375,35 @@ test('lembretes: o botão da demonstração antecipa o de 1 h, não duplica e é
   assert.ok(first.data.sent >= 1);
   await admin('/api/admin/reminders/run', { method: 'POST' });
   assert.equal(db.get("SELECT COUNT(*) n FROM reminders WHERE appointment_id = ? AND kind = '1h'", appt).n, 1, 'apertar de novo não duplica');
+});
+
+test('dados de demonstração: notificações não lidas, sessão para o lembrete e nenhuma enxurrada de avisos', () => {
+  const mem = openDb(':memory:');
+  seedDemo(mem, {});
+  const now = nowSP();
+  const id = (email) => mem.get('SELECT id FROM users WHERE email = ?', email).id;
+  const unread = (email) => mem.get('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL', id(email)).n;
+  const mariana = id('mariana@demo.mesalva.app'); const fernanda = id('fernanda.alves@demo.mesalva.app');
+  const session = mem.get("SELECT id, start FROM appointments WHERE patient_id = ? AND pro_id = ? AND status = 'confirmed' AND substr(start, 1, 10) = ?", mariana, fernanda, now.slice(0, 10));
+  assert.ok(session, 'a Mariana tem sessão hoje com a Fernanda');
+  const left = toMinutes(session.start) - toMinutes(now);
+
+  // As duas contas da demonstração começam com notificações não lidas (2 cada; 1 se os dados forem restaurados depois das 23:00).
+  assert.equal(unread('mariana@demo.mesalva.app'), left > 0 ? 2 : 1);
+  assert.equal(unread('fernanda.alves@demo.mesalva.app'), left > 0 ? 2 : 1);
+
+  // Logo depois de restaurar, a conferência de lembretes não manda nada (os vencidos ficaram marcados).
+  const reminders = createReminders({ db: mem, svc: createServices(mem, { demoMode: true }) });
+  assert.deepEqual(reminders.run({ now }), []);
+
+  // Fora do horário limite (08:00 a 23:00), a sessão fica entre 1h30 e 2h30 depois e o botão da demonstração
+  // manda o lembrete de 1 h dela na hora.
+  const usual = session.start === fromMinutes(Math.ceil((toMinutes(now) + 90) / 60) * 60);
+  if (usual) {
+    assert.ok(left >= 90 && left <= 150, `a sessão começa em ${left} min`);
+    const sent = reminders.run({ now, ahead: 180 });
+    assert.ok(sent.some((x) => x.appointment_id === session.id && x.kind === '1h'));
+    assert.equal(unread('mariana@demo.mesalva.app'), 3);
+  }
+  mem.close();
 });

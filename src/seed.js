@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashPassword, randomId, encrypt, loadNotesKey } from './security.js';
-import { nowSP, addDays, weekday } from './time.js';
+import { nowSP, addDays, weekday, toMinutes, fromMinutes, whenText } from './time.js';
 import { quote } from './pricing.js';
 
 export const DEMO_PASSWORD = 'demo1234';
@@ -82,12 +82,11 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const now = nowSP();
   const today = now.slice(0, 10);
-  const nowHour = Number(now.slice(11, 13));
   const pass = hashPassword(DEMO_PASSWORD);
 
   db.tx(() => {
     if (reset) {
-      for (const t of ['sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
+      for (const t of ['notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
     }
     const user = (role, name, email, { bairro = 'Bela Vista', demo = 0, plan = 'free' } = {}) =>
       db.run('INSERT INTO users(role, name, email, pass_hash, bairro, is_demo, plan) VALUES (?, ?, ?, ?, ?, ?, ?)', role, name, email, pass, bairro, demo ? 1 : 0, plan).lastInsertRowid;
@@ -189,9 +188,13 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
       carla, ids.rafael, carla, 'text', 'Bom dia, Rafael! O Theo dormiu mal hoje, pode ser que chegue mais agitado.', `${today}T10:40:00Z`);
 
     // Mariana (paciente de demonstração).
-    // Sessão online da Mariana com a Fernanda na próxima hora cheia, para demonstrar a sala de vídeo.
-    const nextHour = Math.min(Math.max(nowHour + 1, 8), 23);
-    const sessionToday = `${today}T${String(nextHour).padStart(2, '0')}:00`;
+    // Sessão online da Mariana com a Fernanda numa hora cheia entre 1h30 e 2h30 depois de restaurar os dados
+    // (entre 08:00 e 23:00 do mesmo dia). Serve para demonstrar a sala de vídeo (aberta o dia todo no modo demo)
+    // e o lembrete de 1 h, que chega às duas contas em tempo real: sozinho, só depois de pelo menos 30 minutos,
+    // ou na hora, pelo botão "Disparar lembretes agora" da administração.
+    let sessionToday = fromMinutes(Math.ceil((toMinutes(now) + 90) / 60) * 60);
+    if (sessionToday.slice(0, 10) !== today) sessionToday = `${today}T23:00`;
+    if (sessionToday < `${today}T08:00`) sessionToday = `${today}T08:00`;
     // Libera horários que o histórico aleatório possa ter ocupado antes de criar as sessões fixas da Mariana.
     const clearSlot = (key, start) => {
       const old = db.all("SELECT id FROM appointments WHERE pro_id = ? AND start = ?", ids[key], start);
@@ -233,8 +236,50 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     msg(mariana, 'bruno', mariana, 'text', 'Consegui fazer 4 dias! Ajudou antes da reunião.', 60 * 19);
     msg(mariana, 'bruno', ids.bruno, 'text', 'Que ótimo! Na próxima sessão vamos ver o registro de pensamentos.', 60 * 18);
     msg(mariana, 'fernanda', null, 'system', `Sessão confirmada para ${dd}/${mm} às ${sessionToday.slice(11)} (online, pela sala segura da plataforma).`, 60 * 24);
+    // Lembrete de 24 h dessa sessão, como se tivesse sido enviado ontem (24 horas antes do início).
+    const leftMin = toMinutes(sessionToday) - toMinutes(now);
+    const remindedAgo = 24 * 60 - leftMin;
+    const remindedAt = fromMinutes(toMinutes(now) - remindedAgo);
+    const fernandaWhen = whenText(sessionToday, remindedAt);
+    if (remindedAgo > 90 && remindedAgo < 24 * 60) {
+      msg(mariana, 'fernanda', null, 'system', `Lembrete: a sessão é ${fernandaWhen}, online. A sala abre 15 minutos antes do horário.`, remindedAgo);
+    }
     msg(mariana, 'fernanda', mariana, 'text', 'Oi, Fernanda! Essa semana foi difícil, queria falar sobre o aniversário da minha mãe.', 90);
     msg(mariana, 'fernanda', ids.fernanda, 'text', 'Claro, Mariana. Separei um tempo para isso na nossa sessão de hoje. Até mais tarde!', 75, 0);
+
+    // Central de notificações (v1.1): a Mariana e a Fernanda já começam com duas não lidas cada uma,
+    // e o Rafael com o aviso da mensagem da Carla. read = true cria a notificação já lida.
+    const isoAgo = (minutesAgo) => new Date(Date.now() - minutesAgo * 60000).toISOString().slice(0, 19) + 'Z';
+    const note = (userId, kind, title, body, minutesAgo, { screen = null, param = null, ref = null, read = false } = {}) => {
+      const at = isoAgo(minutesAgo);
+      db.run('INSERT INTO notifications(user_id, kind, title, body, screen, param, ref, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        userId, kind, title, body, screen, param, ref, read ? at : null, at);
+    };
+    const ago30h = fromMinutes(toMinutes(now) - 60 * 30);
+    const ago24h = fromMinutes(toMinutes(now) - 60 * 24);
+    note(mariana, 'confirmed', 'Sessão confirmada', `Sua sessão com Juliana Prado é ${whenText(`${julDay}T10:00`, ago30h)} (presencial).`, 60 * 30, { screen: 'agenda', read: true });
+    note(mariana, 'confirmed', 'Sessão confirmada', `Sua sessão com Fernanda Alves é ${whenText(sessionToday, ago24h)} (online).`, 60 * 24, { screen: 'agenda', read: true });
+    note(ids.fernanda, 'confirmed', 'Nova sessão confirmada', `Mariana Souza marcou ${whenText(sessionToday, ago24h)} (online).`, 60 * 24, { screen: 'proagenda', read: true });
+    if (remindedAgo > 90 && remindedAgo < 24 * 60) {
+      note(mariana, 'reminder', 'Lembrete de sessão', `Sua sessão com Fernanda Alves é ${fernandaWhen} (online).`, remindedAgo, { screen: 'agenda' });
+      note(ids.fernanda, 'reminder', 'Lembrete de sessão', `Sessão com Mariana Souza ${fernandaWhen} (online).`, remindedAgo, { screen: 'proagenda' });
+    }
+    note(mariana, 'message', 'Nova mensagem', 'Fernanda Alves enviou uma mensagem.', 75, { screen: 'chat', param: String(ids.fernanda), ref: `chat:${ids.fernanda}` });
+    const lastReview = db.get('SELECT author_label, rating, created_at FROM reviews WHERE pro_id = ? ORDER BY created_at DESC LIMIT 1', ids.fernanda);
+    if (lastReview) {
+      const minutes = Math.max(1, Math.round((Date.now() - Date.parse(lastReview.created_at)) / 60000));
+      note(ids.fernanda, 'review', 'Nova avaliação', `${lastReview.author_label} avaliou a sessão com ${lastReview.rating} ${lastReview.rating === 1 ? 'estrela' : 'estrelas'}.`, minutes, { screen: 'perfil', param: String(ids.fernanda) });
+    }
+    const carlaAgo = Math.max(1, Math.round((Date.now() - Date.parse(`${today}T10:40:00Z`)) / 60000));
+    note(ids.rafael, 'message', 'Nova mensagem', 'Carla Mendes enviou uma mensagem.', carlaAgo, { screen: 'chat', param: String(carla), ref: `chat:${carla}` });
+
+    // Lembretes: sessões que já estão dentro da janela de 24 h (ou de 1 h) ficam com o lembrete marcado como
+    // enviado, para a demonstração não começar com dezenas de avisos para pacientes fictícios.
+    const until = fromMinutes(toMinutes(now) + 24 * 60);
+    for (const a of db.all("SELECT id, start FROM appointments WHERE status = 'confirmed' AND start > ? AND start <= ?", now, until)) {
+      const left = toMinutes(a.start) - toMinutes(now);
+      db.run('INSERT OR IGNORE INTO reminders(appointment_id, kind) VALUES (?, ?)', a.id, left <= 60 ? '1h' : '24h');
+    }
   });
 }
 

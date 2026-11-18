@@ -1,7 +1,9 @@
 // Inicialização da interface: carrega a sessão, liga os eventos, abre o canal em tempo real e a primeira tela.
-import { S, A, F, I, api, render, resetTo, tab, homeOf, top, closeLayer, toast } from './core.js';
+// Desde a v1.2 também registra o service worker (app instalável) e atende os atalhos do app (/?tela=...).
+import { S, A, F, I, api, render, resetTo, tab, homeOf, top, closeLayer, openLayer, toast } from './core.js';
 import { startLive, setCounts } from './realtime.js';
-import './screens/notifications.js';
+import { registerServiceWorker, syncPush } from './pwa.js';
+import { openTarget, notifyOn } from './screens/notifications.js';
 import './screens/common.js';
 import './screens/patient.js';
 import './screens/pro.js';
@@ -37,8 +39,31 @@ setInterval(async () => {
 // Recarrega a página (botão 'Tentar de novo' sem script inline, que a CSP bloquearia).
 A.reload = () => location.reload();
 
+// Atalhos do app instalado (manifest.webmanifest) e toque num aviso do sistema com o app fechado chegam como
+// /?tela=agenda ou /?tela=chat&p=12&n=40 (n = notificação a marcar como lida). O endereço volta a ser '/'.
+function startParams() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('tela')) return null;
+  history.replaceState(null, '', '/');
+  return { screen: q.get('tela'), param: q.get('p'), id: Number(q.get('n')) || null };
+}
+// Telas que um atalho pode abrir, por perfil (outras ficam na tela inicial).
+const START_SCREENS = {
+  patient: ['home', 'areas', 'agenda', 'chats', 'planos', 'config', 'chat', 'perfil', 'pacote'],
+  pro: ['painel', 'proagenda', 'horarios', 'chats', 'properfil', 'config', 'chat', 'perfil'],
+  admin: ['admin', 'config'],
+};
+function openStart(st) {
+  if (st.screen === 'crise') { openLayer('crise'); return; }
+  if (!S.user) return;
+  const screen = st.screen === 'agenda' && S.user.role === 'pro' ? 'proagenda' : st.screen;
+  if (st.id) api(`/api/notifications/${st.id}/read`, { method: 'POST' }).then((r) => setCounts({ notifications: r.unread })).catch(() => {});
+  if ((START_SCREENS[S.user.role] || []).includes(screen)) openTarget({ screen, param: st.param });
+}
+
 // Abertura: carrega os dados de referência e a sessão; quem já está logado vai direto para sua tela inicial.
 async function boot() {
+  const start = startParams();
   try {
     const [meta, me] = await Promise.all([api('/api/meta'), api('/api/me')]);
     S.meta = meta;
@@ -46,6 +71,9 @@ async function boot() {
     S.unread = me.user?.unread || 0;
     S.notif = me.user?.notifications || 0;
     if (S.user) { startLive(); tab(homeOf(S.user)); } else resetTo('entrada');
+    if (start) openStart(start);
+    // App instalável: service worker e, com os avisos ligados neste aparelho, a inscrição do Web Push.
+    registerServiceWorker().then(() => { if (S.user && notifyOn()) syncPush(); });
   } catch (e) {
     document.getElementById('screen').innerHTML = `<div class="loading"><div class="empty"><div>Não foi possível conectar ao servidor do Me Salva.</div><button class="btn btn-primary btn-sm" data-a="reload">Tentar de novo</button></div></div>`;
     toast(e.message, 'err');

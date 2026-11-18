@@ -167,11 +167,12 @@ test('tempo real: mensagem, "digitando…" e "visto" chegam só às duas pessoas
 
 test('tempo real: profissional não manda "digitando…" para quem não é paciente dele', async () => {
   const mariana = await login('mariana@demo.mesalva.app');
-  const rafael = await login('rafael.nunes@demo.mesalva.app');
+  // O Caio nunca atendeu a Mariana (desde a v1.2 ela é paciente do Rafael, no pacote recorrente).
+  const caio = await login('caio.lima@exemplo.mesalva.app');
   const sm = stream(mariana);
   try {
     await sm.waitFor('hello');
-    const r = await rafael(`/api/conversations/${mariana.user.id}/typing`, { method: 'POST' });
+    const r = await caio(`/api/conversations/${mariana.user.id}/typing`, { method: 'POST' });
     assert.equal(r.status, 404);
     await sleep(150);
     assert.ok(!sm.events.some((e) => e.event === 'typing'));
@@ -412,7 +413,9 @@ test('dados de demonstração: notificações não lidas, sessão para o lembret
     assert.ok(left >= 90 && left <= 150, `a sessão começa em ${left} min`);
     const sent = reminders.run({ now, ahead: 180 });
     assert.ok(sent.some((x) => x.appointment_id === session.id && x.kind === '1h'));
-    assert.equal(unread('mariana@demo.mesalva.app'), 3);
+    // Cada lembrete enviado à Mariana é uma notificação nova (a sessão com a Fernanda e, de manhã cedo, a do pacote com o Rafael).
+    const toMariana = sent.filter((x) => mem.get('SELECT patient_id FROM appointments WHERE id = ?', x.appointment_id).patient_id === mariana).length;
+    assert.equal(unread('mariana@demo.mesalva.app'), 2 + toMariana);
   }
   mem.close();
 });

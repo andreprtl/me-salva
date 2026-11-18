@@ -1,6 +1,6 @@
 {
   "name": "me-salva-mvp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MVP da plataforma Me Salva: conecta pacientes e famílias a profissionais de saúde mental, com triagem guiada, emparelhamento e vagas sociais.",
   "private": true,
   "type": "module",

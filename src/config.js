@@ -1,6 +1,10 @@
 // Configuração lida de variáveis de ambiente (veja .env.example).
 // Todas têm valor padrão, então o projeto roda sem nenhum arquivo .env.
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+
+// Versão do app (do package.json): aparece em Configurações e entra na versão do service worker.
+export const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const env = process.env;
 
@@ -22,4 +26,11 @@ export const config = {
   sessionDays: 7,
   // Sinal de vida do canal em tempo real (/api/stream), em milissegundos.
   heartbeatMs: 25000,
+  // Web Push (v1.2): avisos no celular com o app fechado. PUSH=off desliga o envio.
+  push: env.PUSH !== 'off',
+  // Chaves VAPID em base64url. Sem elas, um par é gerado uma vez em data/vapid.json.
+  vapidPublicKey: env.VAPID_PUBLIC_KEY || null,
+  vapidPrivateKey: env.VAPID_PRIVATE_KEY || null,
+  // Contato enviado aos serviços de push junto com as chaves (endereço https: ou mailto:).
+  vapidSubject: env.VAPID_SUBJECT || 'https://github.com/andreprtl/me-salva',
 };

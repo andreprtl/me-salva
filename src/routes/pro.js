@@ -47,7 +47,7 @@ export default function proRoutes(r, { db, svc, notesKey }) {
     const social = inMonth(month).filter((a) => a.social && a.status !== 'no_show');
     const rating = db.get('SELECT AVG(rating) avg, COUNT(*) n FROM reviews WHERE pro_id = ?', id);
     const todayList = appts.filter((a) => a.start.startsWith(today) && a.status === 'confirmed')
-      .map((a) => ({ id: a.id, start: a.start, patient_id: a.patient_id, patient_name: a.patient_name || 'Conta excluída', modality: a.modality, social: Boolean(a.social), room_open: svc.roomOpen(a, now) }));
+      .map((a) => ({ id: a.id, start: a.start, patient_id: a.patient_id, patient_name: a.patient_name || 'Conta excluída', modality: a.modality, social: Boolean(a.social), package_id: a.package_id, room_open: svc.roomOpen(a, now) }));
     const upcoming = appts.filter((a) => a.status === 'confirmed' && toMinutes(a.start) >= toMinutes(now)).length;
 
     return {

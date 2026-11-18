@@ -5,7 +5,8 @@ import {
   msgTime, when, setTheme, isDark, downloadBlob, copyText, $, bellBtn,
 } from '../core.js';
 import { onLive, startLive, stopLive, setCounts } from '../realtime.js';
-import { notifyRow } from './notifications.js';
+import { notifyRow, notifyOn } from './notifications.js';
+import { installRow, dropPush, syncPush } from '../pwa.js';
 
 // Layout de computador a partir de 960 px de largura.
 const wide = () => matchMedia('(min-width: 960px)').matches;
@@ -45,12 +46,14 @@ screen('entrada', {
 });
 
 // Depois de entrar ou se cadastrar: guarda o usuário, abre o canal em tempo real e a tela inicial do perfil.
+// Com os avisos já permitidos neste aparelho, a inscrição do Web Push passa para a conta que entrou.
 async function afterLogin(user) {
   S.user = user;
   S.unread = user.unread || 0;
   S.notif = user.notifications || 0;
   startLive();
   tab(homeOf(user));
+  if (notifyOn()) syncPush();
 }
 // Entra com uma conta de demonstração (senha demo1234).
 A.demoLogin = (el) => run(async () => {
@@ -177,6 +180,7 @@ screen('config', {
       </form>
       <section class="sec"><div class="lbl">Aparência</div><div class="list">
         <div class="li static">${ic('moon')}<div class="li-t"><b>Tema escuro</b><span>O tema claro é o padrão da plataforma</span></div>${toggle('theme', isDark(), 'Tema escuro')}</div></div></section>
+      <section class="sec"><div class="lbl">Aplicativo</div><div class="list">${installRow()}</div></section>
       ${u.role === 'admin' ? '' : `<section class="sec"><div class="lbl">Avisos</div><div class="list">${notifyRow()}</div></section>`}
       ${u.role === 'patient' ? `<section class="sec"><div class="lbl">Plano</div><div class="list"><button class="li" data-a="tab" data-v="planos">${ic('crown')}<div class="li-t"><b>Meu plano</b><span>${u.plan === 'plus' ? 'Me Salva+ · R$ 19,90/mês' : 'Gratuito'}</span></div>${ic('chevR')}</button>
         <button class="li" data-a="tri">${ic('sparkle')}<div class="li-t"><b>Refazer triagem</b><span>Atualize suas necessidades e preferências</span></div>${ic('chevR')}</button></div></section>` : ''}
@@ -188,7 +192,7 @@ screen('config', {
         <button class="li" data-a="crise">${ic('lifebuoy')}<div class="li-t"><b>Ajuda imediata</b><span>CVV 188 · SAMU 192</span></div>${ic('chevR')}</button>
         <button class="li" data-a="logout">${ic('logout')}<div class="li-t"><b>Sair</b><span>Encerrar a sessão neste aparelho</span></div></button>
       </div></section>
-      <div class="small muted" style="text-align:center">Me Salva · versão 1.1 · projeto acadêmico</div>
+      <div class="small muted" style="text-align:center">Me Salva · versão ${esc(String(S.meta.version || '').replace(/\.0$/, ''))} · projeto acadêmico</div>
     </main>`;
   },
 });
@@ -207,9 +211,10 @@ A.exportData = (el) => run(async () => {
 }, el);
 A.deleteAccount = () => confirmSheet({ title: 'Excluir sua conta?', text: 'Seus dados, mensagens e triagens serão apagados. Sessões futuras serão canceladas. Esta ação não pode ser desfeita.', input: 'Digite EXCLUIR para confirmar', ok: 'Excluir conta', danger: true }, async (v) => {
   await api('/api/me', { method: 'DELETE', body: { confirm: String(v || '').trim().toUpperCase() } });
-  stopLive(); S.user = null; closeLayer(); resetTo('entrada'); toast('Conta excluída.');
+  stopLive(); S.user = null; dropPush(); closeLayer(); resetTo('entrada'); toast('Conta excluída.');
 });
-A.logout = (el) => run(async () => { await api('/api/auth/logout', { method: 'POST' }); stopLive(); S.user = null; S.call = null; resetTo('entrada'); }, el);
+// Sair: antes, este aparelho para de receber os avisos da conta (Web Push), para outra pessoa no mesmo aparelho não vê-los.
+A.logout = (el) => run(async () => { await dropPush(); await api('/api/auth/logout', { method: 'POST' }); stopLive(); S.user = null; S.call = null; resetTo('entrada'); }, el);
 
 /* ================= ajuda imediata e menu do celular ================= */
 // Folha de ajuda imediata com telefones de emergência (CVV 188), acessível em todas as telas.

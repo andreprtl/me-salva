@@ -79,6 +79,7 @@ export async function render() {
   clearScreenTimers();
   leaveHooks.forEach((fn) => { try { fn(); } catch { /* ignora */ } });
   leaveHooks.clear();
+  syncHistory();
   const t = top();
   const def = SCREENS[t.n] || SCREENS.entrada;
   if (def.load && t.d === undefined) {
@@ -102,6 +103,24 @@ export async function render() {
   if (def.after) def.after(t.p, t.d);
   renderLayer();
 }
+
+/* ---------------- botão Voltar do aparelho ---------------- */
+// No app instalado não há barra do navegador, e no Android o gesto ou botão Voltar do sistema volta no histórico.
+// Sem isto, ele fecharia o app de uma vez. Enquanto houver para onde voltar (tela empilhada ou camada aberta),
+// mantemos uma entrada extra no histórico; o Voltar do aparelho consome essa entrada e vira back() ou closeLayer().
+let guard = false;       // existe a entrada extra no histórico?
+let ignorePop = 0;       // voltas no histórico feitas por nós, que não devem virar navegação
+function syncHistory() {
+  const want = S.stack.length > 1 || Boolean(S.layer && S.layer.type !== 'processing');
+  if (want && !guard) { history.pushState({ ms: true }, ''); guard = true; }
+  else if (!want && guard) { guard = false; ignorePop += 1; history.back(); }
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop -= 1; return; }
+  guard = false;
+  if (S.layer) { if (S.layer.type !== 'processing') closeLayer(); else syncHistory(); return; }
+  if (S.stack.length > 1) back(); else syncHistory();
+});
 A.retry = () => refresh();
 A.back = () => back();
 A.go = (el) => go(el.dataset.v, el.dataset.p !== undefined ? parseParam(el.dataset.p) : undefined);
@@ -166,6 +185,7 @@ export function openLayer(type, data = {}) { S.layer = { type, ...data }; render
 export function closeLayer() { S.layer = null; renderLayer(); }
 export function renderLayer() {
   const L = $('#layer');
+  syncHistory();
   if (!S.layer) { L.className = 'layer'; L.innerHTML = ''; return; }
   L.className = 'layer open';
   L.innerHTML = (LAYERS[S.layer.type] || (() => ''))(S.layer);
@@ -177,7 +197,7 @@ LAYERS.processing = (l) => `<div class="scrim"></div><div class="center-load"><d
 LAYERS.confirm = (l) => `<div class="scrim" data-a="close"></div><div class="sheet" role="dialog" aria-label="${esc(l.title)}">
   <div class="h2">${esc(l.title)}</div><p class="muted" style="margin:0">${esc(l.text)}</p>
   ${l.input ? `<div class="field"><label for="confirmIn">${esc(l.input)}</label><input class="input" id="confirmIn" autocomplete="off" autofocus></div>` : ''}
-  <div class="grid2"><button class="btn btn-ghost" data-a="close">Voltar</button><button class="btn ${l.danger ? 'btn-primary' : 'btn-primary'}" data-a="confirmOk" style="${l.danger ? 'background:var(--danger);color:#fff' : ''}">${esc(l.ok || 'Confirmar')}</button></div></div>`;
+  <div class="grid2"><button class="btn btn-ghost" data-a="close">Voltar</button><button class="btn ${l.danger ? 'btn-danger' : 'btn-primary'}" data-a="confirmOk">${esc(l.ok || 'Confirmar')}</button></div></div>`;
 let confirmFn = null;
 // Pede confirmação antes de uma ação; fn recebe o texto digitado, quando há campo.
 export function confirmSheet(opts, fn) { confirmFn = fn; openLayer('confirm', opts); }
@@ -226,6 +246,12 @@ export function dayLabel(day) {
   return `${DOW[weekdayOf(day)]}, ${d} ${MES[m - 1]}`;
 }
 export const when = (start) => `${dayLabel(start.slice(0, 10))}, ${start.slice(11, 16)}`;
+// Minutos de um horário 'AAAA-MM-DDTHH:MM' (só para comparar e subtrair, como toMinutes em src/time.js).
+export const minutesOf = (stamp) => { const [y, m, d] = dayParts(stamp.slice(0, 10)); return Date.UTC(y, m - 1, d, Number(stamp.slice(11, 13)), Number(stamp.slice(14, 16))) / 60000; };
+// Horas que faltam até um horário (negativo se já passou).
+export const hoursUntil = (stamp) => (minutesOf(stamp) - minutesOf(nowSP())) / 60;
+// 'AAAA-MM-DD…' → 'DD/MM'.
+export const dm = (stamp) => `${stamp.slice(8, 10)}/${stamp.slice(5, 7)}`;
 // Tempo desde um instante ISO: 'agora', 'há 5 min', 'há 2 h', 'ontem' ou a data.
 export function ago(iso) {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -308,6 +334,10 @@ const IC = {
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.5M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5M20 20v-4h-4"/>',
+  repeat: '<path d="m17 2.5 3.5 3.5L17 9.5"/><path d="M3.5 11.5V10a4 4 0 0 1 4-4h13M7 21.5 3.5 18 7 14.5"/><path d="M20.5 12.5V14a4 4 0 0 1-4 4h-13"/>',
+  phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/>',
+  wifiOff: '<path d="m2 2 20 20M8.5 16.4a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.7M19 12.9a10 10 0 0 0-2.3-1.6M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 11 5M12 20h.01"/>',
 };
 export const ic = (n, c = '') => `<svg class="ic ${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ''}</svg>`;
 
@@ -322,6 +352,14 @@ export const wordmark = (s = 54) => `<div class="logo-lock">${logoMark(s * 1.45)
 export const avatar = (name, color = '#2F7D69', s = 48) => `<span class="av" style="width:${s}px;height:${s}px;background:${esc(color)};font-size:${Math.round(s * 0.36)}px">${esc(initials(name))}</span>`;
 // Cinco estrelas preenchidas conforme a nota arredondada.
 export function stars(n) { let h = ''; for (let i = 1; i <= 5; i++) h += ic('star', 'fill' + (i <= Math.round(n) ? '' : ' off')); return `<span class="stars" aria-label="${nota(n)} de 5">${h}</span>`; }
+// Desenho de QR Code ilustrativo; o código copia e cola ao lado é o que segue o padrão PIX.
+export function qrSvg(seed) {
+  const n = 25; let r = '';
+  const h = (s) => { let x = 2166136261; for (const c of s) { x ^= c.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
+  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="var(--qr)"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="var(--qr-bg)"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="var(--qr)"/>`;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { if ((x < 8 && y < 8) || (x > 16 && y < 8) || (x < 8 && y > 16)) continue; if (h(seed + ':' + x + ',' + y) % 2) r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }
+  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="QR Code ilustrativo"><g fill="var(--qr)">${r}</g>${finder(0, 0)}${finder(18, 0)}${finder(0, 18)}</svg>`;
+}
 export const backBtn = () => `<button class="icon-btn" data-a="back" aria-label="Voltar">${ic('chevL')}</button>`;
 export const areaName = (id) => S.meta?.areas.find((a) => a.id === id)?.nome || 'Todos os profissionais';
 export const chipCheck = (name, value, label, checked) => `<label class="chip-check"><input type="checkbox" name="${esc(name)}" value="${esc(value)}" ${checked ? 'checked' : ''}><span>${esc(label)}</span></label>`;

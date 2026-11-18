@@ -53,11 +53,16 @@ export default function meRoutes(r, { db, svc, hub, notesKey }) {
       conta: db.get('SELECT id, role, name, email, bairro, address, plan, plan_since, created_at FROM users WHERE id = ?', id),
       perfil_profissional: req.user.role === 'pro' ? svc.getPro(id) : undefined,
       triagens: db.all('SELECT answers, needs, created_at FROM triages WHERE user_id = ?', id).map((t) => ({ ...t, answers: JSON.parse(t.answers), needs: JSON.parse(t.needs) })),
-      agendamentos: db.all('SELECT id, pro_id, patient_id, start, modality, social, amount, status, created_at FROM appointments WHERE patient_id = ? OR pro_id = ?', id, id),
+      agendamentos: db.all('SELECT id, pro_id, patient_id, package_id, start, modality, social, amount, status, created_at FROM appointments WHERE patient_id = ? OR pro_id = ?', id, id),
+      pacotes: db.all('SELECT id, pro_id, patient_id, weekdays, time, weeks, modality, amount, status, created_at, paid_at FROM packages WHERE patient_id = ? OR pro_id = ?', id, id)
+        .map((p) => ({ ...p, weekdays: JSON.parse(p.weekdays) })),
       pagamentos: db.all('SELECT id, kind, method, amount, status, created_at, paid_at FROM payments WHERE user_id = ?', id),
       mensagens: db.all("SELECT id, patient_id, pro_id, sender_id, kind, body, created_at FROM messages WHERE patient_id = ? OR pro_id = ?", id, id),
       avaliacoes: db.all('SELECT pro_id, rating, tags, text, author_label, created_at FROM reviews WHERE patient_id = ?', id),
       notificacoes: db.all('SELECT kind, title, body, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY id', id),
+      // Aparelhos com avisos do sistema ligados (Web Push): só o serviço e a data, sem as chaves.
+      aparelhos_com_avisos: db.all('SELECT endpoint, created_at FROM push_subscriptions WHERE user_id = ? ORDER BY id', id)
+        .map((s) => ({ servico: new URL(s.endpoint).hostname, criado_em: s.created_at })),
       prontuario: req.user.role === 'pro'
         ? db.all('SELECT patient_id, iv, tag, data, created_at FROM notes WHERE pro_id = ?', id).map((n) => ({ patient_id: n.patient_id, created_at: n.created_at, texto: decrypt(notesKey, n) }))
         : undefined,

@@ -9,6 +9,9 @@ export { COOKIE, requireUser, requireRole } from './guards.js';
 import { createServices } from './services.js';
 import { createHub } from './realtime.js';
 import { createReminders } from './reminders.js';
+import { createServiceWorker, SW_CSP } from './pwa.js';
+import { createPush } from './push.js';
+import { APP_VERSION } from './config.js';
 import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import catalogRoutes from './routes/catalog.js';
@@ -18,6 +21,8 @@ import proRoutes from './routes/pro.js';
 import adminRoutes from './routes/admin.js';
 import realtimeRoutes from './routes/realtime.js';
 import notificationRoutes from './routes/notifications.js';
+import packageRoutes from './routes/packages.js';
+import pushRoutes from './routes/push.js';
 
 // Content Security Policy: só scripts do próprio site (nenhum script inline), fontes do Google Fonts
 // e imagens e áudios locais. Limita o estrago de uma eventual injeção de HTML.
@@ -30,17 +35,19 @@ const CSP = [
 
 // Recebe o banco, a configuração e a chave do prontuário e devolve o handler HTTP.
 // Os testes usam esta mesma função com um banco temporário.
-// O handler devolvido carrega handle.ctx (banco, serviços, hub, lembretes) e handle.close(), que encerra as conexões
+// push (Web Push) pode ser trocado nos testes por um com envio falso.
+// O handler devolvido carrega handle.ctx (banco, serviços, hub, lembretes, push) e handle.close(), que encerra as conexões
 // em tempo real. A conferência automática dos lembretes é ligada no server.js (os testes a chamam com horário fixo).
-export function createApp({ db, config, notesKey }) {
+export function createApp({ db, config, notesKey, push = createPush({ db, config }) }) {
   const router = createRouter();
   const hub = createHub({ db, heartbeatMs: config.heartbeatMs });
-  const svc = createServices(db, config, hub);
+  const svc = createServices(db, config, hub, push);
   const reminders = createReminders({ db, svc });
-  const ctx = { db, config, svc, notesKey, hub, reminders };
+  const ctx = { db, config, svc, notesKey, hub, reminders, push };
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
-  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes]) mount(router, ctx);
+  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes, packageRoutes, pushRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));
+  const sw = createServiceWorker({ publicDir, appVersion: APP_VERSION });
 
   // Identifica o usuário pelo cookie de sessão; o token é procurado pelo hash SHA-256 guardado no banco.
   function loadUser(req) {
@@ -81,6 +88,12 @@ export function createApp({ db, config, notesKey }) {
         return sendJson(res, 200, { ok: true });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(404, 'Não encontrado.');
+      // Service worker do app instalável (v1.2): montado na hora, com a versão atual (src/pwa.js).
+      // no-cache faz o navegador sempre conferir se há versão nova.
+      if (url.pathname === '/sw.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Security-Policy': SW_CSP });
+        return res.end(req.method === 'HEAD' ? undefined : sw.build().body);
+      }
       if (serveStatic(publicDir, url.pathname, res)) return;
       serveStatic(publicDir, '/index.html', res); // as rotas da interface são resolvidas no navegador
     // Erros esperados (HttpError) viram mensagens para o usuário; os inesperados vão para o log e recebem uma mensagem genérica.
@@ -91,6 +104,7 @@ export function createApp({ db, config, notesKey }) {
     }
   }
   handle.ctx = ctx;
+  handle.sw = sw;
   handle.close = () => hub.close();
   return handle;
 }

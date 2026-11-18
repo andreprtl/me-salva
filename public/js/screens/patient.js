@@ -2,10 +2,13 @@
 import {
   S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, refresh, top, every, openLayer, closeLayer,
   confirmSheet, toast, esc, ic, logoMark, avatar, stars, backBtn, brl, brl2, nota, km, when, dayLabel, dateBox,
-  DOW, DOWL, MES, areaName, toggle, copyText, $, bellBtn, countBadge,
+  DOW, DOWL, MES, areaName, toggle, copyText, $, bellBtn, countBadge, qrSvg, weekdayOf, dm,
 } from '../core.js';
 import { wide } from './common.js';
 import { notifyInvite } from './notifications.js';
+import { installInvite } from '../pwa.js';
+import { groupByPackage, packCard } from './packages.js';
+import { RECURRENCE, weekdaysText } from '../shared/data.js';
 
 // Filtros da busca (S.f), mantidos enquanto o paciente navega.
 const freshFilters = () => ({ area: null, q: '', modality: 'todos', max: 300, social: false, sort: 'rel' });
@@ -50,6 +53,7 @@ screen('home', {
             <div class="grow"><div class="eyebrow">Próxima sessão</div><b>${esc(nx.pro_name)}</b><div class="small muted">${when(nx.start)} · ${nx.modality === 'online' ? 'Online' : 'Presencial'}</div></div>
             ${nx.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${nx.id}">${ic('video')}Entrar</button>` : `<button class="btn btn-ghost btn-sm" data-a="tab" data-v="agenda">Ver</button>`}
           </section>` : `<section class="card next"><span class="s-ic">${ic('cal')}</span><div class="grow"><b>Nenhuma sessão marcada</b><div class="small muted">Faça a triagem ou busque um profissional.</div></div></section>`}
+          ${installInvite()}
           <button class="promo" data-a="short" data-v="social">${ic('sparkle')}<div><b>Vagas sociais a partir de R$ 40</b><span>Profissionais recém-formados, com supervisão clínica, abrem horários com valor acessível.</span></div></button>
           <button class="crisis only-m" data-a="crise">${ic('lifebuoy')}<div><b>Precisa de ajuda agora?</b><span>CVV: ligue 188, 24 horas, gratuito.</span></div></button>
           ${S.user.plan !== 'plus' ? `<button class="nudge only-d" data-a="tab" data-v="planos">${ic('crown')}<div class="grow"><b>Me Salva+</b> · 10% de desconto em todas as sessões por R$ 19,90/mês.</div>${ic('chevR')}</button>` : ''}
@@ -257,6 +261,7 @@ screen('agendar', {
     if (!S.bk || S.bk.pro_id !== id) S.bk = { pro_id: id, method: 'pix' };
     if (!S.bk.modality) S.bk.modality = d.pro.modalities[0];
     if (S.bk.day == null) { const i = d.days.findIndex((x) => x.items.some((s) => !s.taken)); S.bk.day = Math.max(0, i); paintAgendar(id, d); }
+    if (S.bk.rep?.on) loadRep(id, d); // volta da tela de pagamento ou horário recarregado: confere o pacote de novo
   },
   view: (id, d) => agendarHtml(id, d),
 });
@@ -267,7 +272,8 @@ function agendarHtml(id, d) {
   const day = d.days[b.day ?? 0];
   const slot = b.start ? day?.items.find((s) => s.start === b.start) : null;
   const q = slot ? slot.quote : null;
-  const summary = `<section class="card sum">
+  const pack = Boolean(slot && b.rep?.on);
+  const summary = pack ? packSummary(id, d, slot) : `<section class="card sum">
     <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.approach_short)}</div></div></div>
     <div class="sum-r"><span>Data</span><b>${slot ? when(slot.start) : 'Escolha um horário'}</b></div>
     <div class="sum-r"><span>Atendimento</span><b>${b.modality === 'online' ? 'Online' : 'Presencial'} · 50 min</b></div>
@@ -289,16 +295,138 @@ function agendarHtml(id, d) {
       <section class="sec"><div class="sec-h"><div class="lbl">Horários disponíveis</div>${d.social ? `<span class="soc">social = ${brl2(d.social.amount)}</span>` : ''}</div>
         ${day && day.items.length ? `<div class="slots">${day.items.map((s) => `<button class="slot ${s.social ? 'soc' : ''} ${b.start === s.start ? 'on' : ''}" data-a="bkSlot" data-v="${s.start}" ${s.taken ? 'disabled aria-label="Ocupado"' : ''}>${s.time}</button>`).join('')}</div>` : '<div class="small muted">Sem horários neste dia.</div>'}
       </section>
+      ${slot ? repHtml(d, slot) : ''}
       <div class="only-m">${slot ? summary : ''}</div>
     </div>
     <div class="col stick only-d">${summary}</div>
   </div></main>
-  <div class="footer gut only-m"><div class="tot grow"><span>Total</span><b class="total-big">${brl2(q ? q.amount : d.regular.amount)}</b></div><button class="btn btn-primary" data-a="go" data-v="pagamento" data-p="${id}" ${slot ? '' : 'disabled'}>Continuar</button></div>`;
+  <div class="footer gut only-m"><div class="tot grow"><span>${pack ? `Pacote · ${repSessions().length} sessões` : 'Total'}</span><b class="total-big">${brl2(pack ? repTotal() : q ? q.amount : d.regular.amount)}</b></div><button class="btn btn-primary" data-a="go" data-v="pagamento" data-p="${id}" ${slot && (!pack || repReady()) ? '' : 'disabled'}>Continuar</button></div>`;
 }
+
+/* ---------------- Repetir: agendamento recorrente (v1.2) ---------------- */
+// Estado em S.bk.rep: on, days (dias da semana), weeks, prev (prévia do servidor), key (o que a prévia confere),
+// loading, error e skip (datas com conflito que a pessoa preferiu pular em vez de usar a sugestão).
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const REASON = { taken: 'horário já reservado por outra pessoa', mine: 'você já tem uma sessão nesse horário', unavailable: 'fora da agenda do profissional' };
+// Dias da semana em que o profissional atende no horário escolhido (pela grade das próximas 2 semanas).
+const daysWithTime = (d, time) => new Set(d.days.filter((x) => x.items.some((s) => s.time === time)).map((x) => x.weekday));
+// Sessões que entram no pacote: as datas livres e as sugestões aceitas.
+function repSessions() {
+  const r = S.bk?.rep;
+  if (!r?.on || !r.prev) return [];
+  return r.prev.items.map((i) => (i.ok ? { start: i.start, quote: i.quote, social: i.social }
+    : i.suggestion && !r.skip.has(i.start) ? { start: i.suggestion.start, quote: i.suggestion.quote, social: i.suggestion.social, alt: true } : null))
+    .filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
+}
+const repTotal = () => repSessions().reduce((t, x) => t + x.quote.amount, 0);
+const repReady = () => Boolean(S.bk?.rep?.prev && !S.bk.rep.loading && repSessions().length >= 2);
+// Busca a prévia do pacote no servidor (conflitos, sugestões e valores) quando o padrão muda.
+async function loadRep(id, d) {
+  const r = S.bk.rep;
+  const slot = curSlot(d);
+  if (!r?.on || !slot) return;
+  const key = `${slot.start}|${r.days.join(',')}|${r.weeks}`;
+  if (r.key === key && (r.prev || r.loading)) return;
+  Object.assign(r, { key, loading: true, error: null, prev: null, skip: new Set() });
+  try {
+    const res = await api(`/api/pros/${id}/recurrence?start=${slot.start}&weekdays=${r.days.join(',')}&weeks=${r.weeks}`);
+    if (r.key === key) r.prev = res;
+  } catch (e) { if (r.key === key) r.error = e.message; }
+  if (r.key === key) r.loading = false;
+  const t = top();
+  if (t.n === 'agendar' && S.bk.rep === r) paintAgendar(t.p, t.d);
+}
+// Seção "Repetir toda semana", logo depois dos horários.
+function repHtml(d, slot) {
+  const r = S.bk.rep;
+  const head = `<div class="row"><span class="rep-ic">${ic('repeat')}</span><div class="grow"><b>Repetir toda semana</b><div class="small muted">Para quem precisa de várias sessões por semana, como na terapia ABA.</div></div>${toggle('repTog', r?.on, 'Repetir toda semana')}</div>`;
+  if (!r?.on) return `<section class="card sec rep">${head}</section>`;
+  const avail = daysWithTime(d, slot.time);
+  const anchor = weekdayOf(slot.start.slice(0, 10));
+  const first = d.pro.name.replace(/^Dra?\.\s*/, '').split(' ')[0];
+  return `<section class="card sec rep">${head}
+    <div class="sec"><div class="lbl">Dias da semana, às ${slot.time}</div>
+      <div class="chips">${DOW_ORDER.filter((w) => avail.has(w)).map((w) => `<button class="chip ${r.days.includes(w) ? 'on' : ''}" data-a="repDay" data-v="${w}" aria-pressed="${r.days.includes(w)}" ${w === anchor ? 'disabled title="Dia do primeiro horário"' : ''}>${DOW[w]}</button>`).join('')}</div>
+      <div class="small muted">Aparecem só os dias em que ${esc(first)} atende às ${slot.time}. O dia do primeiro horário sempre entra.</div></div>
+    <div class="sec"><div class="lbl">Por quanto tempo</div>
+      <div class="seg" style="max-width:420px">${RECURRENCE.weeks.map((w) => `<button class="${r.weeks === w ? 'on' : ''}" data-a="repWeeks" data-v="${w}">${w} semanas</button>`).join('')}</div></div>
+    <div class="rep-prev">${repPreview(r)}</div>
+  </section>`;
+}
+// Prévia: datas com conflito (com a sugestão de horário) e a lista de todas as sessões do pacote.
+function repPreview(r) {
+  if (r.loading) return '<div class="row small muted"><span class="spin"></span>Conferindo as datas…</div>';
+  if (r.error) return `<div class="banner warn">${ic('info')}<div><b>Não foi possível conferir as datas</b><span>${esc(r.error)}</span></div></div>`;
+  if (!r.prev) return '';
+  const bad = r.prev.items.filter((i) => !i.ok);
+  const sessions = repSessions();
+  const label = (start) => `${dayLabel(start.slice(0, 10))} · ${start.slice(11, 16)}`;
+  const conflicts = bad.map((i) => `<div class="rep-conf">
+    <div class="row"><span class="rep-x">${ic('info')}</span><div class="grow"><b>${label(i.start)}</b><div class="small muted">${REASON[i.reason]}</div></div></div>
+    ${i.suggestion ? `<div class="rep-sug"><div class="grow small">Horário livre mais próximo: <b>${i.suggestion.start.slice(0, 10) === i.start.slice(0, 10) ? 'mesmo dia' : esc(dayLabel(i.suggestion.start.slice(0, 10)))}, ${i.suggestion.start.slice(11, 16)}</b> · ${brl2(i.suggestion.quote.amount)}${i.suggestion.social ? ' <span class="soc">social</span>' : ''}</div>
+      <div class="seg"><button class="${r.skip.has(i.start) ? '' : 'on'}" data-a="repUse" data-v="${i.start}">Usar ${i.suggestion.start.slice(11, 16)}</button><button class="${r.skip.has(i.start) ? 'on' : ''}" data-a="repSkip" data-v="${i.start}">Pular data</button></div></div>`
+    : '<div class="small muted">Não há horário livre perto dessa data. Ela fica fora do pacote.</div>'}</div>`).join('');
+  return `${bad.length ? `<div class="banner warn">${ic('info')}<div><b>${bad.length === 1 ? '1 data precisa' : `${bad.length} datas precisam`} de atenção</b><span>Escolha usar o horário sugerido ou pular a data.</span></div></div>${conflicts}`
+    : `<div class="banner ok">${ic('check')}<div><b>Todas as ${r.prev.items.length} datas estão livres</b><span>${esc(weekdaysText(r.prev.weekdays))}, às ${r.prev.time}, por ${r.prev.weeks} semanas.</span></div></div>`}
+    <details class="rep-all"><summary>Ver as ${sessions.length} sessões do pacote</summary><div class="rep-list">${sessions.map((x) => `<div class="rep-row"><span class="grow">${label(x.start)}${x.alt ? ' <span class="pill lav">horário alternativo</span>' : ''}${x.social ? ' <span class="soc">social</span>' : ''}</span><b class="num">${brl2(x.quote.amount)}</b></div>`).join('')}</div></details>`;
+}
+// Resumo do pacote (no lugar do resumo da sessão avulsa).
+function packSummary(id, d, slot) {
+  const r = S.bk.rep; const p = d.pro;
+  const sessions = repSessions();
+  const groups = new Map();
+  for (const x of sessions) { const k = `${x.quote.amount}|${x.social ? 1 : 0}`; groups.set(k, (groups.get(k) || 0) + 1); }
+  const discount = sessions.reduce((t, x) => t + x.quote.discount, 0);
+  const days = r.prev?.weekdays || r.days;
+  return `<section class="card sum">
+    <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.approach_short)}</div></div></div>
+    <div class="sum-r"><span>Pacote</span><b>${esc(weekdaysText(days))}, ${slot.time} · ${r.weeks} semanas</b></div>
+    <div class="sum-r"><span>Sessões</span><b>${r.loading || !r.prev ? '…' : `${sessions.length}${sessions.length ? ` · ${dm(sessions[0].start)} a ${dm(sessions.at(-1).start)}` : ''}`}</b></div>
+    <div class="sum-r"><span>Atendimento</span><b>${S.bk.modality === 'online' ? 'Online' : 'Presencial'} · 50 min</b></div>
+    ${[...groups].map(([k, n]) => { const [amount, social] = k.split('|').map(Number); return `<div class="sum-r"><span>${n} × ${brl2(amount)}${social ? ' (vaga social)' : ''}</span><b>${brl2(n * amount)}</b></div>`; }).join('')}
+    ${discount ? `<div class="sum-r"><span>Desconto Me Salva+ já aplicado</span><b style="color:var(--lav)">− ${brl2(discount)}</b></div>` : ''}
+    <div class="sum-r sum-t"><span>Total</span><b class="total-big">${brl2(repTotal())}</b></div>
+    <div class="small muted">Um PIX só, com o valor total. Cada sessão pode ser cancelada até 24 horas antes, com o valor devolvido.</div>
+    <button class="btn btn-primary btn-block only-d" data-a="go" data-v="pagamento" data-p="${id}" ${repReady() ? '' : 'disabled'}>Continuar para pagamento</button>
+  </section>`;
+}
+// Liga e desliga o "Repetir". Ao ligar, começa com o dia do horário escolhido e 4 semanas.
+A.repTog = () => {
+  const t = top(); const slot = curSlot(t.d);
+  if (!slot) return;
+  const r = S.bk.rep;
+  if (r?.on) { r.on = false; r.key = null; } else S.bk.rep = { on: true, days: [weekdayOf(slot.start.slice(0, 10))], weeks: RECURRENCE.weeks[0], key: null, prev: null, skip: new Set() };
+  paintAgendar(t.p, t.d);
+  loadRep(t.p, t.d);
+};
+A.repDay = (el) => {
+  const r = S.bk.rep; const w = Number(el.dataset.v);
+  if (r.days.includes(w)) r.days = r.days.filter((x) => x !== w);
+  else if (r.days.length >= RECURRENCE.maxDays) { toast(`Escolha no máximo ${RECURRENCE.maxDays} dias por semana.`); return; }
+  else r.days = [...r.days, w].sort((a, b) => DOW_ORDER.indexOf(a) - DOW_ORDER.indexOf(b));
+  const t = top(); paintAgendar(t.p, t.d); loadRep(t.p, t.d);
+};
+A.repWeeks = (el) => { S.bk.rep.weeks = Number(el.dataset.v); const t = top(); paintAgendar(t.p, t.d); loadRep(t.p, t.d); };
+A.repUse = (el) => { S.bk.rep.skip.delete(el.dataset.v); const t = top(); paintAgendar(t.p, t.d); };
+A.repSkip = (el) => { S.bk.rep.skip.add(el.dataset.v); const t = top(); paintAgendar(t.p, t.d); };
 function paintAgendar(id, d) { const sc = $('#agMain')?.scrollTop; $('#screen').innerHTML = agendarHtml(id, d); if (sc) $('#agMain').scrollTop = sc; }
 A.bkModal = (el) => { S.bk.modality = el.dataset.v; const t = top(); paintAgendar(t.p, t.d); };
 A.bkDay = (el) => { S.bk.day = Number(el.dataset.v); S.bk.start = null; const t = top(); paintAgendar(t.p, t.d); };
-A.bkSlot = (el) => { S.bk.start = el.dataset.v; const t = top(); paintAgendar(t.p, t.d); if (!wide()) { const m = $('#agMain'); m.scrollTop = m.scrollHeight; } };
+A.bkSlot = (el) => {
+  S.bk.start = el.dataset.v;
+  const t = top();
+  // Com o "Repetir" ligado, o pacote passa a partir do novo horário (ficam só os dias em que esse horário existe).
+  const r = S.bk.rep;
+  if (r?.on) {
+    const slot = curSlot(t.d);
+    const avail = daysWithTime(t.d, slot.time);
+    const anchor = weekdayOf(slot.start.slice(0, 10));
+    r.days = [...new Set([anchor, ...r.days.filter((w) => avail.has(w))])].sort((a, b) => DOW_ORDER.indexOf(a) - DOW_ORDER.indexOf(b));
+    loadRep(t.p, t.d);
+  }
+  paintAgendar(t.p, t.d);
+  if (!wide() && !r?.on) { const m = $('#agMain'); m.scrollTop = m.scrollHeight; }
+};
 
 /* ================= pagamento ================= */
 // Resumo e forma de pagamento (PIX ou cartão de teste).
@@ -308,6 +436,7 @@ screen('pagamento', {
     const prev = S.stack[S.stack.length - 2];
     const d = prev?.d;
     if (!d || !S.bk?.start) return `<main class="scroll gut"><div class="empty">${ic('info')}<div>Escolha um horário antes de pagar.</div><button class="btn btn-ghost btn-sm" data-a="back">Voltar</button></div></main>`;
+    if (S.bk.rep?.on && repReady()) return packPayHtml(d);
     const slot = curSlot(d); const q = slot.quote; const p = d.pro;
     const m = S.bk.method;
     const payBtn = `<button class="btn btn-primary btn-block" data-a="pay">${m === 'pix' ? 'Gerar PIX de ' : 'Pagar '}${brl2(q.amount)}</button>`;
@@ -340,6 +469,52 @@ screen('pagamento', {
   },
 });
 F.noop = () => {};
+// Pagamento do pacote recorrente: um PIX só, com o total e o resumo por sessão.
+function packPayHtml(d) {
+  const p = d.pro; const r = S.bk.rep;
+  const sessions = repSessions();
+  const total = repTotal();
+  const withPlus = sessions.reduce((t, x) => t + Math.round(x.quote.base * 0.9), 0);
+  const payBtn = `<button class="btn btn-primary btn-block" data-a="payPack">Gerar PIX de ${brl2(total)}</button>`;
+  return `<header class="bar gut">${backBtn()}<div class="bar-t"><div class="eyebrow">Pagamento do pacote</div><h1 class="h1">Confirme e pague</h1></div></header>
+  <main class="scroll gut"><div class="two">
+    <div class="col">
+      <section class="sec"><div class="lbl">Forma de pagamento</div>
+        <div class="pay on"><span class="p-ic">${ic('pix')}</span><div class="grow"><b>PIX do pacote</b><div class="small muted">Um pagamento só, com o valor de todas as sessões</div></div><span class="radio"></span></div>
+      </section>
+      <section class="sec"><div class="lbl">Sessões do pacote</div>
+        <div class="card rep-list">${sessions.map((x) => `<div class="rep-row"><span class="grow">${dayLabel(x.start.slice(0, 10))} · ${x.start.slice(11, 16)}${x.alt ? ' <span class="pill lav">horário alternativo</span>' : ''}${x.social ? ' <span class="soc">social</span>' : ''}</span><b class="num">${brl2(x.quote.amount)}</b></div>`).join('')}</div></section>
+      ${S.user.plan !== 'plus' ? `<button class="nudge" data-a="tab" data-v="planos">${ic('crown')}<div class="grow">Com o <b>Me Salva+</b> este pacote sairia por <b>${brl2(withPlus)}</b>.</div>${ic('chevR')}</button>` : ''}
+      <div class="secure">${ic('lock')}Pagamento simulado (nenhum valor é cobrado) · os horários ficam reservados por 15 minutos</div>
+    </div>
+    <section class="card sum stick">
+      <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 40)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(weekdaysText(r.prev.weekdays))}, ${r.prev.time} · ${S.bk.modality === 'online' ? 'Online' : 'Presencial'}</div></div></div>
+      <div class="sum-r"><span>${sessions.length} sessões (50 min)</span><b>${dm(sessions[0].start)} a ${dm(sessions.at(-1).start)}</b></div>
+      <div class="sum-r"><span>Taxa de serviço</span><b>Grátis</b></div>
+      <div class="sum-r sum-t"><span>Total</span><b class="total-big">${brl2(total)}</b></div>
+      <div class="only-d">${payBtn}</div>
+    </section>
+  </div></main>
+  <div class="footer gut only-m">${payBtn}</div>`;
+}
+// Cria o pacote (os horários ficam reservados por 15 minutos) e segue para o PIX do total.
+A.payPack = (el) => run(async () => {
+  const r = S.bk.rep;
+  openLayer('processing', { text: 'Gerando o PIX do pacote…' });
+  try {
+    const res = await api('/api/packages', { method: 'POST', body: {
+      pro_id: S.bk.pro_id, start: r.prev.start, weekdays: r.prev.weekdays, weeks: r.prev.weeks, modality: S.bk.modality,
+      sessions: repSessions().map((x) => x.start),
+    } });
+    closeLayer();
+    go('pixpacote', res.package_id);
+  } catch (e) {
+    closeLayer();
+    // Um horário foi reservado por outra pessoa nesse meio-tempo: volta e confere o pacote de novo.
+    if (e.status === 409 || e.status === 400) { r.key = null; back(); }
+    throw e;
+  }
+}, el);
 A.payM = (el) => { S.bk.method = el.dataset.v; replace('pagamento', top().p); };
 // Cria a reserva (o horário fica guardado por 15 minutos) e segue para o PIX ou cobra o cartão.
 A.pay = (el) => run(async () => {
@@ -354,14 +529,6 @@ A.pay = (el) => run(async () => {
   } catch (e) { closeLayer(); if (e.status === 409) { S.bk.start = null; back(); } throw e; }
 }, el);
 
-// Desenho de QR Code ilustrativo; o código copia e cola ao lado é o que segue o padrão PIX.
-function qrSvg(seed) {
-  const n = 25; let r = '';
-  const h = (s) => { let x = 2166136261; for (const c of s) { x ^= c.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
-  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="var(--qr)"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="var(--qr-bg)"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="var(--qr)"/>`;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { if ((x < 8 && y < 8) || (x > 16 && y < 8) || (x < 8 && y > 16)) continue; if (h(seed + ':' + x + ',' + y) % 2) r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }
-  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="QR Code ilustrativo"><g fill="var(--qr)">${r}</g>${finder(0, 0)}${finder(18, 0)}${finder(0, 18)}</svg>`;
-}
 // Tela do PIX com contagem regressiva; o botão simula a confirmação do banco.
 screen('pix', {
   nav: 'areas', width: 'narrow',
@@ -420,9 +587,11 @@ screen('agenda', {
         : a.status === 'confirmed' ? `${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar na sessão</button>` : ''}<button class="btn btn-ghost btn-sm" data-a="go" data-v="chat" data-p="${a.pro_id}">${ic('chat')}Mensagem</button><button class="btn btn-ghost btn-sm" data-a="cancelAppt" data-v="${a.id}">Cancelar</button>`
         : `${a.status === 'done' ? (a.review_id ? `<span class="row small" style="gap:6px">Você avaliou ${stars(a.review_rating)}</span>` : `<button class="btn btn-primary btn-sm" data-a="go" data-v="avaliar" data-p="${a.id}">${ic('star')}Avaliar sessão</button>`) : ''}<button class="btn btn-ghost btn-sm" data-a="agendar" data-v="${a.pro_id}">Agendar de novo</button>`}
       </div></section>`;
+    // Sessões do mesmo pacote recorrente aparecem juntas, num cartão só (v1.2).
+    const items = groupByPackage(list, d.packages).map((g) => (g.a ? card(g.a) : packCard(g.pk, g.items, S.agTab)));
     return `<header class="bar gut"><div class="bar-t"><div class="eyebrow">Minhas sessões</div><h1 class="h1">Agenda</h1></div>${bellBtn()}</header>
     <div class="gut" style="padding-bottom:12px;flex:none"><div class="seg" style="max-width:420px"><button class="${S.agTab === 'up' ? 'on' : ''}" data-a="agTab" data-v="up">Próximas (${d.upcoming.length})</button><button class="${S.agTab === 'past' ? 'on' : ''}" data-a="agTab" data-v="past">Anteriores (${d.past.length})</button></div></div>
-    <main class="scroll gut">${list.length ? `<div class="agenda-list">${list.map(card).join('')}</div>` : `<div class="empty">${ic('cal')}<div>Nenhuma sessão por aqui.</div><button class="btn btn-primary btn-sm" data-a="tab" data-v="areas">Encontrar profissional</button></div>`}</main>`;
+    <main class="scroll gut">${items.length ? `<div class="agenda-list">${items.join('')}</div>` : `<div class="empty">${ic('cal')}<div>Nenhuma sessão por aqui.</div><button class="btn btn-primary btn-sm" data-a="tab" data-v="areas">Encontrar profissional</button></div>`}</main>`;
   },
 });
 A.agTab = (el) => { S.agTab = el.dataset.v; replace(top().n, top().p); };

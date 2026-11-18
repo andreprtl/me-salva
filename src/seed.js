@@ -4,8 +4,11 @@ import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashPassword, randomId, encrypt, loadNotesKey } from './security.js';
-import { nowSP, addDays, weekday, toMinutes, fromMinutes, whenText } from './time.js';
+import { nowSP, addDays, weekday, weekStart, toMinutes, fromMinutes, whenText } from './time.js';
 import { quote } from './pricing.js';
+import { socialKeys } from './slots.js';
+import { occurrences, overlaps } from './recurrence.js';
+import { weekdaysText } from '../public/js/shared/data.js';
 
 export const DEMO_PASSWORD = 'demo1234';
 
@@ -86,7 +89,7 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
 
   db.tx(() => {
     if (reset) {
-      for (const t of ['notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
+      for (const t of ['push_subscriptions', 'notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'packages', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
     }
     const user = (role, name, email, { bairro = 'Bela Vista', demo = 0, plan = 'free' } = {}) =>
       db.run('INSERT INTO users(role, name, email, pass_hash, bairro, is_demo, plan) VALUES (?, ?, ?, ?, ?, ?, ?)', role, name, email, pass, bairro, demo ? 1 : 0, plan).lastInsertRowid;
@@ -121,17 +124,19 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
       return { price: p.price * 100, social_price: p.social ? p.social * 100 : null };
     };
     // Cria uma sessão já com o pagamento aprovado e os valores calculados por quote().
-    const insertAppt = (patient, key, start, status, { modality, social = false, room = null } = {}) => {
+    // pkg: sessão de um pacote recorrente (v1.2), paga pelo PIX do pacote, criado em paidDay.
+    const insertAppt = (patient, key, start, status, { modality, social = false, room = null, pkg = null, paidDay = null } = {}) => {
       const p = PROS.find((x) => x.key === key);
       const q = quote({ pro: proOf(key), social: social && p.social, plus: false });
-      const id = db.run(`INSERT INTO appointments(patient_id, pro_id, start, modality, social, base_price, amount, fee, pro_amount, status, room, created_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      patient, ids[key], start, modality || p.modal[0], social && p.social ? 1 : 0, q.base, q.amount, q.fee, q.pro_amount, status,
-      status === 'confirmed' ? room || 'MeSalva-' + randomId(9) : null, `${addDays(start.slice(0, 10), -3)}T12:00:00Z`).lastInsertRowid;
+      const day = paidDay || addDays(start.slice(0, 10), -3);
+      const id = db.run(`INSERT INTO appointments(patient_id, pro_id, package_id, start, modality, social, base_price, amount, fee, pro_amount, status, room, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      patient, ids[key], pkg, start, modality || p.modal[0], social && p.social ? 1 : 0, q.base, q.amount, q.fee, q.pro_amount, status,
+      status === 'confirmed' ? room || 'MeSalva-' + randomId(9) : null, `${day}T12:00:00Z`).lastInsertRowid;
       if (status !== 'cancelled') {
-        db.run(`INSERT INTO payments(user_id, appointment_id, kind, method, amount, fee, pro_amount, status, card_last4, created_at, paid_at)
-                VALUES (?, ?, 'session', ?, ?, ?, ?, 'paid', ?, ?, ?)`,
-        patient, id, rand() < 0.6 ? 'pix' : 'card', q.amount, q.fee, q.pro_amount, '4242', `${addDays(start.slice(0, 10), -3)}T12:00:00Z`, `${addDays(start.slice(0, 10), -3)}T12:05:00Z`);
+        db.run(`INSERT INTO payments(user_id, appointment_id, package_id, kind, method, amount, fee, pro_amount, status, card_last4, created_at, paid_at)
+                VALUES (?, ?, ?, 'session', ?, ?, ?, ?, 'paid', ?, ?, ?)`,
+        patient, id, pkg, pkg ? 'pix' : rand() < 0.6 ? 'pix' : 'card', q.amount, q.fee, q.pro_amount, pkg ? null : '4242', `${day}T12:00:00Z`, `${day}T12:05:00Z`);
       }
       return id;
     };
@@ -210,13 +215,41 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     const julDay = addDays(today, 3);
     if (free('juliana', `${julDay}T10:00`)) insertAppt(mariana, 'juliana', `${julDay}T10:00`, 'confirmed', { modality: 'presencial' });
 
+    // Pacote recorrente da Mariana com o Rafael (v1.2): seg e qua às 08:00, presencial (em casa), por 8 semanas,
+    // começado na segunda-feira de duas semanas atrás. As sessões que já passaram estão realizadas; as próximas,
+    // confirmadas. A segunda às 08:00 é vaga social do Rafael (R$ 45); a quarta, valor normal (R$ 90).
+    const rafael = PROS.find((x) => x.key === 'rafael');
+    const rafaelSocial = socialKeys({ is_new: 1, supervisor: rafael.supervisor, social_price: rafael.social * 100, social_weekly: rafael.socialWeekly }, rafael.hours);
+    const pkgStart = `${addDays(weekStart(today), -14)}T08:00`;
+    const pkgDays = [1, 3];
+    const marianaBusy = () => db.all("SELECT start FROM appointments WHERE patient_id = ? AND status IN ('confirmed','pending_payment','done')", mariana).map((r) => r.start);
+    const pkgDates = occurrences({ start: pkgStart, weekdays: pkgDays, weeks: 8 }).filter((st) => !marianaBusy().some((b) => overlaps(b, st)));
+    const pkgPaid = addDays(pkgStart.slice(0, 10), -3);
+    const pkg = db.run(`INSERT INTO packages(patient_id, pro_id, weekdays, time, weeks, modality, amount, status, paid_at, created_at)
+                        VALUES (?, ?, ?, '08:00', 8, 'presencial', 0, 'paid', ?, ?)`, mariana, ids.rafael, JSON.stringify(pkgDays), `${pkgPaid}T12:05:00Z`, `${pkgPaid}T12:00:00Z`).lastInsertRowid;
+    for (const st of pkgDates) {
+      if (st < now) clearSlot('rafael', st); else if (!free('rafael', st)) continue;
+      const social = rafaelSocial.has(`${weekday(st.slice(0, 10))}|08:00`);
+      insertAppt(mariana, 'rafael', st, st < now ? 'done' : 'confirmed', { modality: 'presencial', social, pkg, paidDay: pkgPaid });
+    }
+    db.run("UPDATE packages SET amount = (SELECT COALESCE(SUM(amount), 0) FROM appointments WHERE package_id = ?) WHERE id = ?", pkg, pkg);
+
+    // Para demonstrar o agendamento recorrente com conflito: as terças e quintas do Rafael das 14:00 às 16:00 ficam
+    // livres nas próximas semanas, menos a quinta da semana seguinte à próxima terça, às 15:00, já reservada por
+    // outra família. Quem montar "ter e qui às 15:00" a partir da próxima terça vê esse conflito e a sugestão
+    // de 14:00 no mesmo dia.
+    const nextTue = addDays(today, ((2 - weekday(today) + 7) % 7) || 7);
+    const demoKeep = (key, day, hour) => key === 'rafael' && [2, 4].includes(weekday(day)) && ['14:00', '15:00', '16:00'].includes(hour);
+    const conflictAt = `${addDays(nextTue, 9)}T15:00`;
+    if (free('rafael', conflictAt)) insertAppt(families[4], 'rafael', conflictAt, 'confirmed', { modality: 'presencial' });
+
     // Agenda futura: alguns horários já reservados por outras famílias e pacientes.
     for (const p of PROS) {
       const pool = p.audience.includes('Adultos') ? adults : families;
       for (let i = 0; i < 14; i++) {
         const day = addDays(today, i);
         for (const t of p.hours.filter((h) => h.weekday === weekday(day))) {
-          if (`${day}T${t.hour}` <= now || !free(p.key, `${day}T${t.hour}`)) continue;
+          if (`${day}T${t.hour}` <= now || !free(p.key, `${day}T${t.hour}`) || demoKeep(p.key, day, t.hour)) continue;
           if (rand() < (p.key === 'rafael' ? 0.35 : 0.25)) insertAppt(pick(pool), p.key, `${day}T${t.hour}`, 'confirmed', { modality: pick(p.modal), social: Boolean(p.social) && rand() < 0.5 });
         }
       }
@@ -244,6 +277,12 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     if (remindedAgo > 90 && remindedAgo < 24 * 60) {
       msg(mariana, 'fernanda', null, 'system', `Lembrete: a sessão é ${fernandaWhen}, online. A sala abre 15 minutos antes do horário.`, remindedAgo);
     }
+    // Conversa com o Rafael sobre o pacote recorrente.
+    const pkgView = db.get("SELECT MIN(start) first, MAX(start) last, COUNT(*) n FROM appointments WHERE package_id = ?", pkg);
+    const pkgAgo = Math.round((Date.now() - Date.parse(`${pkgPaid}T12:05:00Z`)) / 60000);
+    msg(mariana, 'rafael', null, 'system', `Pacote confirmado: ${pkgView.n} sessões (${weekdaysText(pkgDays)}, 08:00), de ${pkgView.first.slice(8, 10)}/${pkgView.first.slice(5, 7)} a ${pkgView.last.slice(8, 10)}/${pkgView.last.slice(5, 7)}, presencial.`, pkgAgo);
+    msg(mariana, 'rafael', ids.rafael, 'text', 'Oi, Mariana! Combinado: segundas e quartas às 8h, aí na sua casa. Na primeira sessão eu levo o material da rotina visual da manhã.', pkgAgo - 40);
+    msg(mariana, 'rafael', mariana, 'text', 'Perfeito, Rafael. Obrigada!', pkgAgo - 55);
     msg(mariana, 'fernanda', mariana, 'text', 'Oi, Fernanda! Essa semana foi difícil, queria falar sobre o aniversário da minha mãe.', 90);
     msg(mariana, 'fernanda', ids.fernanda, 'text', 'Claro, Mariana. Separei um tempo para isso na nossa sessão de hoje. Até mais tarde!', 75, 0);
 
@@ -257,6 +296,8 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     };
     const ago30h = fromMinutes(toMinutes(now) - 60 * 30);
     const ago24h = fromMinutes(toMinutes(now) - 60 * 24);
+    note(mariana, 'confirmed', 'Pacote confirmado', `Suas ${pkgView.n} sessões com Rafael Nunes estão confirmadas (seg e qua, 08:00).`, pkgAgo, { screen: 'pacote', param: String(pkg), read: true });
+    note(ids.rafael, 'confirmed', 'Novo pacote confirmado', `Mariana Souza marcou ${pkgView.n} sessões (seg e qua, 08:00, presencial).`, pkgAgo, { screen: 'proagenda', read: true });
     note(mariana, 'confirmed', 'Sessão confirmada', `Sua sessão com Juliana Prado é ${whenText(`${julDay}T10:00`, ago30h)} (presencial).`, 60 * 30, { screen: 'agenda', read: true });
     note(mariana, 'confirmed', 'Sessão confirmada', `Sua sessão com Fernanda Alves é ${whenText(sessionToday, ago24h)} (online).`, 60 * 24, { screen: 'agenda', read: true });
     note(ids.fernanda, 'confirmed', 'Nova sessão confirmada', `Mariana Souza marcou ${whenText(sessionToday, ago24h)} (online).`, 60 * 24, { screen: 'proagenda', read: true });

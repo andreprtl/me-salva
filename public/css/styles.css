@@ -642,3 +642,66 @@ table.tbl{border-collapse:collapse;width:100%;min-width:560px;font-size:13px}
 .np-invite .row{margin-left:auto}
 .np-invite b{display:block;font-size:13px}
 .np-invite .grow span{font-size:12px;color:var(--muted)}
+
+/* ---------- v1.2: app instalável (PWA) ---------- */
+/* Áreas seguras do celular (entalhe e barra inferior), que valem quando o app abre em tela cheia. */
+.main{padding-top:env(safe-area-inset-top,0px)}
+.footer{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+.pill .ic{width:13px;height:13px}
+/* Convite discreto para instalar, na tela inicial do paciente e no painel do profissional. */
+.install-invite{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;background:var(--teal-soft);border-radius:16px;padding:12px 14px}
+.install-invite>.ic{color:var(--accent-ink);width:24px;height:24px}
+.install-invite .grow{flex:1 1 190px}
+.install-invite .row{margin-left:auto}
+.install-invite b{display:block;font-size:13px}
+.install-invite .grow span{font-size:12px;color:var(--muted)}
+/* Passo a passo de instalação no iPhone. */
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.steps li{display:flex;gap:12px;align-items:flex-start;line-height:1.5}
+.steps .num{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--teal-soft);color:var(--accent-ink);font-weight:700;font-size:13px}
+.steps .ic{width:17px;height:17px;vertical-align:-3px;color:var(--teal)}
+/* Faixa "sem internet", no topo da tela. */
+.netbar{position:fixed;left:0;right:0;top:0;z-index:70;display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 8px max(14px,env(safe-area-inset-left,0px));background:var(--ink);color:var(--bg);font-size:12.5px;font-weight:500;animation:fade .25s}
+.netbar .grow{flex:1}
+.netbar .btn{background:var(--lav-soft);color:var(--lav);min-height:32px;padding:0 12px}
+
+/* ---------- v1.2: agendamento recorrente ---------- */
+/* Botão de ação destrutiva (cancelar), legível nos dois temas. */
+.btn-danger{background:var(--danger);color:#fff}
+:root.dark .btn-danger{color:#2A140B}
+.rep .row>.grow b{display:block}
+.rep-ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--lav-soft);color:var(--lav)}
+.rep .chip[disabled]{cursor:default;opacity:1}
+.rep-prev{display:flex;flex-direction:column;gap:10px}
+.rep-conf{border:1.5px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+.rep-x{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--danger-soft);color:var(--danger)}
+.rep-x .ic{width:17px;height:17px}
+.rep-sug{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.rep-sug .grow{flex:1 1 200px}
+.rep-sug .seg{flex:0 1 auto}
+.rep-all summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--accent-ink);padding:4px 0}
+.rep-list{display:flex;flex-direction:column}
+.rep-row{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px}
+.rep-row:last-child{border-bottom:0}
+.card.rep-list{padding:6px 14px}
+/* Cartão do pacote na agenda do paciente. */
+.pk-card .pk-tag{color:var(--lav)!important;font-weight:600}
+.pk-prog{height:6px;border-radius:3px;background:var(--surface-2);margin:12px 0 6px;overflow:hidden}
+.pk-prog i{display:block;height:100%;background:var(--teal);border-radius:3px}
+/* Tela do pacote: lista de sessões. */
+.pk-list{display:flex;flex-direction:column;gap:8px}
+.pk-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 12px}
+.pk-row .grow{flex:1 1 150px;min-width:0}
+.pk-row .grow b{display:block;font-weight:600}
+.pk-row .grow span{font-size:12.5px;color:var(--muted)}
+.pk-row .grow em{font-style:normal}
+.pk-row .datebox{width:46px;padding:5px 0}
+.pk-row .datebox b{font-size:16px}
+.pk-act{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.pk-row.is-off{opacity:.55}
+.pk-row.is-off .grow b{text-decoration:line-through}
+/* Marca "recorrente" na agenda do profissional. */
+.tag.lav{background:var(--lav-soft);color:var(--lav)}
+.tag .ic{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
+.tag-btn{border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:500}
+.tag-btn:hover{filter:brightness(.97);text-decoration:underline}

@@ -1,11 +1,26 @@
 {
+  "id": "/",
   "name": "Me Salva",
   "short_name": "Me Salva",
-  "description": "Conecta pacientes e famílias a profissionais de saúde mental verificados.",
+  "description": "Conecta pacientes e famílias a profissionais de saúde mental verificados, com triagem guiada e vagas sociais. Projeto acadêmico.",
   "lang": "pt-BR",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#FFF9F3",
   "theme_color": "#1E4D40",
-  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "categories": ["health", "medical", "lifestyle"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Minha agenda", "short_name": "Agenda", "url": "/?tela=agenda", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Mensagens", "short_name": "Mensagens", "url": "/?tela=chats", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Ajuda imediata (CVV 188)", "short_name": "Ajuda: CVV 188", "url": "/?tela=crise", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
 }

@@ -2,6 +2,52 @@
 
 Todas as mudanças importantes do Me Salva ficam registradas aqui. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.2.0] — 2026-11-18
+
+Etapa 3B: app instalável no celular e agendamento recorrente. Quem já tem o `data/mesalva.db` da versão 1.0 ou 1.1 não precisa apagá-lo: as tabelas novas são criadas sozinhas, e as colunas novas (`package_id` em `appointments` e `payments`) são acrescentadas na primeira inicialização, sem perder dados.
+
+### Adicionado
+
+- **App instalável (PWA)**: service worker (`public/sw.js`) de mesmo domínio, compatível com a CSP. Guarda a estrutura do app (CSS, JavaScript, ícones, manifesto e página offline) num cache com versão; a versão é a do `package.json` mais um resumo (hash) de todos os arquivos de `public/`, montada pelo servidor a cada pedido de `/sw.js` (`src/pwa.js`). Qualquer mudança num arquivo gera um service worker novo, que baixa tudo de novo e apaga o cache antigo. A API (`/api/...`) e o canal em tempo real vão sempre pela rede, nunca pelo cache. As fontes do Google ficam num cache próprio.
+- **Página offline** (`public/offline.html`): sem internet, abrir o app mostra "Você está sem internet", o botão "Tentar de novo" e a ajuda imediata, com links `tel:188` (CVV) e `tel:192` (SAMU), que funcionam sem internet. Não depende de JavaScript.
+- **Faixa "sem internet"** no topo das telas quando a conexão cai, com o atalho "Ajuda: 188".
+- **Manifesto completo**: ícones PNG 192 e 512, versões *maskable* (fundo até a borda, logo na zona segura), ícone SVG, cor de tema, cor de fundo da tela de abertura e três atalhos (Minha agenda, Mensagens e Ajuda imediata · CVV 188), que abrem `/?tela=...`.
+- **iPhone**: `apple-touch-icon` (180 × 180), metas `apple-mobile-web-app-*` e telas de abertura para 9 tamanhos de iPhone. Os ícones e as telas são gerados a partir do logo por `scripts/icones.mjs` (precisa do `rsvg-convert`, só para quem for mudar o logo).
+- **"Instalar o app"** em Configurações e convite discreto na tela inicial do paciente e no painel do profissional (some de vez com "Agora não"). No Android e no computador, abre a janela de instalação do navegador (`beforeinstallprompt`); no iPhone, mostra o passo a passo Compartilhar → Adicionar à Tela de Início.
+- **Áreas seguras**: com o app instalado em tela cheia, o conteúdo respeita o entalhe e a barra inferior (`env(safe-area-inset-*)`), inclusive nos rodapés com botão.
+- **Botão Voltar do aparelho**: no Android (e no navegador), voltar retorna uma tela ou fecha a folha aberta, em vez de fechar o app.
+- **Web Push** (avisos com o app fechado) sem dependências (`src/push.js`): chaves VAPID geradas uma vez em `data/vapid.json` (ou lidas de `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`), assinatura JWT ES256 (RFC 8292) e criptografia do aviso em `aes128gcm` (RFC 8291), tudo com `node:crypto`, e envio com `node:https`. Cada notificação da v1.1 também vai para os aparelhos inscritos. Tabela `push_subscriptions` e rotas `GET /api/push/key`, `POST /api/push/subscribe` e `POST /api/push/unsubscribe`. No iPhone, funciona no app instalado (iOS 16.4 ou mais recente).
+- **Agendamento recorrente**: na tela de agendamento, depois de escolher o horário, a opção "Repetir toda semana" deixa escolher os dias da semana (só os dias em que o profissional atende naquele horário; o dia do primeiro horário sempre entra) e a duração (4, 8 ou 12 semanas).
+  - **Conferência de conflitos** antes de pagar (`GET /api/pros/:id/recurrence`): cada data é conferida contra a agenda do profissional e contra as outras sessões do próprio paciente, com qualquer profissional. As datas com problema aparecem com o motivo ("horário já reservado por outra pessoa", "você já tem uma sessão nesse horário" ou "fora da agenda do profissional") e com o horário livre mais próximo (no mesmo dia, se houver; até 3 dias antes ou depois). A pessoa escolhe "Usar 14:00" ou "Pular data". As regras ficam em `src/recurrence.js`, em funções puras.
+  - **Pagamento do pacote** (`POST /api/packages` e `POST /api/packages/:id/pix-simulate`): um PIX só, com o total e o resumo por sessão. Cada sessão continua com o próprio valor (vaga social e Me Salva+ calculados sessão por sessão) e a própria cobrança; não há desconto de pacote. Os horários ficam reservados por 15 minutos, como no agendamento avulso; se o PIX não for pago, o pacote inteiro vence e libera os horários.
+  - **Vagas sociais**: o limite semanal do profissional continua valendo, porque a vaga social é uma propriedade do horário (as N primeiras vagas da semana); um pacote nunca passa dele. A regra foi isolada em `socialKeys` (`src/slots.js`).
+  - **Cancelamento**: continua sessão por sessão, com a regra de 24 h para o paciente, e ganhou "esta e as próximas" (`POST /api/appointments/:id/cancel` com `{ "following": true }`), com reembolso de cada sessão, um aviso só no chat e uma notificação só para o outro lado.
+  - **Tela do pacote** (`pacote`, `GET /api/packages/:id`): todas as sessões, com avaliação, cancelamento e "Cancelar as próximas". **Tela do PIX do pacote** (`pixpacote`).
+  - **Agenda do paciente**: as sessões do mesmo pacote aparecem num cartão só, com o padrão ("seg e qua, 08:00"), a próxima sessão e o progresso. **Agenda do profissional** e painel: o paciente aparece marcado como "recorrente"; a marca abre a tela do pacote.
+  - **Lembretes**: os de 24 h e 1 h da v1.1 valem para cada sessão do pacote.
+- **Testes**: `test/pwa.test.js` (6), `test/recurrence.test.js` (11) e `test/push.test.js` (5), num total de 50 testes em 6 arquivos.
+
+### Alterado
+
+- Os avisos do sistema (notificações do navegador) agora saem pelo service worker, o único caminho no Android e no iPhone. O toque no aviso abre a tela certa, com o app aberto ou fechado. Em Configurações, a linha passou a se chamar "Avisos do aparelho".
+- Sair da conta e excluir a conta desligam o Web Push deste aparelho; entrar em outra conta no mesmo aparelho passa a inscrição para ela.
+- `GET /api/appointments` traz `packages` (o resumo de cada pacote da lista) e o campo `package_id` em cada sessão; o painel do profissional também.
+- `GET /api/meta` traz a versão do app (`version`); a tela de Configurações deixou de ter a versão escrita à mão.
+- A exportação dos dados (LGPD) inclui os pacotes e os aparelhos com avisos ligados (só o serviço e a data, sem as chaves).
+- Dados de demonstração: a Mariana tem um pacote com o Rafael (seg e qua às 08:00, presencial, 8 semanas, começado há duas semanas, com a segunda em vaga social de R$ 45) e uma conversa com ele. As terças e quintas do Rafael das 14:00 às 16:00 ficam livres para a demonstração, menos a quinta da semana seguinte à próxima terça, às 15:00, já reservada por outra família, para mostrar o conflito e a sugestão de 14:00.
+- O teste "profissional não manda digitando…" usa o Caio, porque a Mariana passou a ser paciente do Rafael.
+- O desenho do QR Code ilustrativo foi para `core.js` (`qrSvg`), usado pelos dois PIX.
+- O botão de cancelar das folhas de confirmação usa a classe `btn-danger`, legível também no tema escuro.
+- README e `docs/DOCUMENTACAO.md` atualizados para a versão 1.2; versão `1.2.0` no `package.json`.
+
+### Segurança
+
+- O service worker nunca guarda respostas da API: agenda, mensagens e pagamentos não ficam no aparelho.
+- `/sw.js` tem uma CSP própria, que só acrescenta as fontes do Google ao `connect-src`; as páginas continuam com a CSP de antes.
+- Web Push: o servidor só envia para os serviços de push conhecidos (Google, Mozilla, Apple e Microsoft), em HTTPS e na porta padrão, o que impede usar a inscrição para fazer o servidor acessar outros endereços (SSRF). O aviso vai criptografado de ponta a ponta para o aparelho, e o serviço do fabricante não consegue lê-lo. O texto das mensagens do chat continua fora das notificações.
+- `data/vapid.json` é criado só com permissão para o dono do arquivo e fica fora do Git, como o resto de `data/`.
+- A tela do pacote e o PIX do pacote respondem 404 para quem não é o paciente ou o profissional do pacote; o código PIX só vai para o paciente.
+
 ## [1.1.0] — 2026-11-17
 
 Etapa 3A: tempo real e notificações. Quem já tem o `data/mesalva.db` da versão 1.0 não precisa apagá-lo: as tabelas novas são criadas sozinhas e nenhuma tabela antiga ganhou coluna.

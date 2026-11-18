@@ -1,4 +1,4 @@
-# Me Salva — MVP (versão 1.1)
+# Me Salva — MVP (versão 1.2)
 
 **A sua terapia na palma da sua mão.** Plataforma web responsiva que conecta pacientes e famílias a profissionais de saúde mental verificados, com triagem guiada (incluindo um caminho para TEA/ABA), emparelhamento por compatibilidade e **vagas sociais** oferecidas por profissionais recém-formados com supervisão clínica.
 
@@ -15,16 +15,18 @@ Projeto da disciplina **Empreendedorismo em Informática** (USP). Os dados de de
 | Triagem | 5 passos sem jargão, com caminho TEA/ABA; respostas salvas; motor de emparelhamento no servidor com restrições, pontuação e motivos | Pesos iniciais definidos pela equipe, ainda sem validação clínica |
 | Busca | Filtros por área, tema, modalidade, valor e vaga social; ordenação; lista e mapa por bairro | Mapa esquemático de São Paulo (sem serviço de mapas) |
 | Agenda | Horários gerados da disponibilidade semanal, sem conflito (o mesmo horário não pode ser reservado duas vezes), reserva por 15 min até o pagamento, cancelamento com regra de 24 h | — |
+| Agendamento recorrente | "Repetir toda semana": dias da semana e duração de 4, 8 ou 12 semanas; conferência de conflitos em todas as datas (com outras pessoas e com as sessões do próprio paciente) e sugestão do horário livre mais próximo; um PIX para o pacote inteiro, com o resumo por sessão; cancelamento de uma sessão ou "esta e as próximas"; agenda do paciente agrupada por pacote e paciente marcado como recorrente na agenda do profissional | — |
 | Pagamento | Cálculo do valor, divisão automática (12% plataforma / 88% profissional), desconto do Me Salva+, código PIX no padrão BR Code | Banco e operadora de cartão (cartões de teste) |
 | Vagas sociais | Valor social, vagas fixas por semana e preenchimento automático de horários livres nas próximas 24 h | — |
 | Chat | Mensagens de texto e de **áudio gravado** entre paciente e profissional, avisos automáticos de confirmação e cancelamento; **em tempo real**: mensagem nova aparece na hora, "Fulana está digitando…" e "visto" (um tique = enviada, dois tiques = vista) | — |
-| Notificações | Sino com contador e painel com "Marcar todas como lidas"; avisos de mensagem, sessão confirmada ou cancelada, lembrete, avaliação recebida e registro aprovado ou recusado, chegando em tempo real; aviso do sistema (notificação do navegador) quando a aba está em segundo plano | Aviso do sistema no celular fica para a v1.2; não há e-mail nem SMS |
+| Notificações | Sino com contador e painel com "Marcar todas como lidas"; avisos de mensagem, sessão confirmada ou cancelada, lembrete, avaliação recebida e registro aprovado ou recusado, chegando em tempo real; aviso do sistema no computador e no celular, inclusive com o app fechado (**Web Push**, sem dependências) | Não há e-mail nem SMS |
 | Lembretes | O servidor confere a cada minuto e manda um lembrete 24 h e outro 1 h antes de cada sessão confirmada, como mensagem no chat e como notificação, para paciente e profissional | Botão "Disparar lembretes agora" na administração (só no modo demonstração) |
 | Sessão online | Sala com prévia da câmera, cronômetro, encerramento e link para a videochamada (Jitsi Meet) | — |
 | Avaliações | Só depois de sessão realizada, uma por sessão, com opção anônima; nota média calculada | — |
 | Profissional | Painel com ocupação de 6 meses e receita líquida, agenda com presença e falta, edição de perfil e horários, **prontuário criptografado (AES-256-GCM)** com registro de acesso | — |
 | LGPD | Consentimento no cadastro, download dos próprios dados (JSON) e exclusão da conta | — |
-| Interface | Computador e celular, tema claro (padrão) e escuro, botão de ajuda imediata (CVV 188) em todas as telas | — |
+| App no celular | **Instalável** (PWA): ícone na tela inicial, abre em tela cheia respeitando o entalhe e a barra inferior, tela de abertura, atalhos no ícone, botão "Instalar o app" e passo a passo no iPhone; sem internet, página offline com o CVV 188 | A instalação no celular precisa do endereço HTTPS da publicação (Etapa 4) |
+| Interface | Computador e celular, tema claro (padrão) e escuro, botão de ajuda imediata (CVV 188) em todas as telas, botão Voltar do aparelho | — |
 
 O que mudou desde a versão 1.0 está no [CHANGELOG](CHANGELOG.md).
 
@@ -45,7 +47,7 @@ Outros comandos:
 ```bash
 npm run dev    # reinicia sozinho quando um arquivo muda
 npm run seed   # apaga o banco e recria os dados de demonstração
-npm test       # testes automatizados (regras de negócio e API)
+npm test       # testes automatizados (regras de negócio, API, tempo real, app instalável, recorrência e Web Push)
 ```
 
 ### Contas de demonstração
@@ -54,8 +56,8 @@ Todas usam a senha **`demo1234`** e aparecem como botões na tela de entrada.
 
 | Conta | E-mail | Para mostrar |
 |---|---|---|
-| Paciente | `mariana@demo.mesalva.app` | Triagem, busca, agendamento, pagamento, chat, sessão de hoje, avaliação e notificações (já começa com 2 não lidas) |
-| Profissional recém-formado | `rafael.nunes@demo.mesalva.app` | Painel, vagas sociais, agenda e prontuário (começa com o aviso de uma mensagem da Carla) |
+| Paciente | `mariana@demo.mesalva.app` | Triagem, busca, agendamento avulso e recorrente, pagamento, chat, sessão de hoje, avaliação e notificações (já começa com 2 não lidas); tem um pacote com o Rafael (seg e qua às 08:00) |
+| Profissional recém-formado | `rafael.nunes@demo.mesalva.app` | Painel, vagas sociais, agenda com a Mariana marcada como recorrente e prontuário (começa com o aviso de uma mensagem da Carla) |
 | Psicóloga | `fernanda.alves@demo.mesalva.app` | O outro lado do chat e da sessão da Mariana (também começa com 2 notificações não lidas) |
 | Profissional em verificação | `beatriz.campos@demo.mesalva.app` | Perfil aguardando aprovação |
 | Administração | `admin@demo.mesalva.app` | Aprovar registros, ver indicadores, restaurar os dados e disparar lembretes |
@@ -64,16 +66,20 @@ Todas usam a senha **`demo1234`** e aparecem como botões na tela de entrada.
 
 **Para mostrar o tempo real**, abra duas janelas com cookies separados (uma janela normal e outra anônima, ou dois perfis do navegador), uma com a Mariana e outra com a Fernanda; se for no mesmo perfil, entrar com a Fernanda desconecta a Mariana. Mande mensagens de um lado e veja o "digitando…", a mensagem e o "visto" aparecerem do outro. Para mostrar o lembrete de 1 h sem esperar, abra uma terceira janela como administração e aperte **Disparar lembretes agora** (ele antecipa o lembrete das sessões que começam nas próximas 3 horas): o aviso chega às duas contas na hora, pelo sino e como mensagem automática no chat. Sem apertar nada, o lembrete chega sozinho quando faltarem 60 minutos para a sessão, o que leva pelo menos 30 minutos depois de restaurar os dados.
 
-> A câmera e o microfone só funcionam em `http://localhost` ou em endereços `https://`.
+**Para mostrar o agendamento recorrente**, entre como Mariana, abra o perfil do Rafael e toque em **Agendar**. Escolha a próxima terça às 15:00, ligue **Repetir toda semana**, marque também a quinta e deixe 4 semanas. Uma das quintas (a da semana seguinte) já está reservada por outra família: a tela mostra o conflito e sugere 14:00 no mesmo dia. Use a sugestão, continue, gere o PIX do pacote e simule o pagamento. A agenda passa a mostrar os dois pacotes agrupados, e na agenda do Rafael a Mariana aparece como "recorrente".
 
-> Quem já tem o `data/mesalva.db` da versão 1.0 não precisa apagá-lo: as tabelas novas são criadas sozinhas. Em `http://localhost` (HTTP/1.1), o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar; no Render, com HTTPS e HTTP/2, isso não acontece.
+**Para mostrar o app no celular**, abra o endereço HTTPS da publicação (Etapa 4) no celular. No Android (Chrome), use o convite da tela inicial ou **Configurações → Instalar o app**; no iPhone (Safari), **Compartilhar → Adicionar à Tela de Início**. O ícone do Me Salva aparece na tela inicial e o app abre em tela cheia. Para receber os lembretes com o app fechado, ligue **Configurações → Avisos do aparelho** (no iPhone, dentro do app instalado).
+
+> A câmera e o microfone só funcionam em `http://localhost` ou em endereços `https://`. O mesmo vale para o service worker: em `http://localhost` ele funciona para testes, mas o celular só instala o app num endereço `https://`.
+
+> Quem já tem o `data/mesalva.db` da versão 1.0 ou 1.1 não precisa apagá-lo: as tabelas e as colunas novas são criadas sozinhas. Em `http://localhost` (HTTP/1.1), o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar; no Render, com HTTPS e HTTP/2, isso não acontece.
 
 ## Publicar na internet (Render, gratuito)
 
 1. Suba este repositório no GitHub.
 2. Em [render.com](https://render.com), crie um **Web Service** a partir do repositório (o arquivo `render.yaml` já traz a configuração).
 3. Build command: *(deixe vazio)* · Start command: `npm start`.
-4. O endereço gerado já usa HTTPS, então câmera e microfone funcionam no celular.
+4. O endereço gerado já usa HTTPS, então câmera, microfone, a instalação do app e os avisos com o app fechado funcionam no celular.
 
 No plano gratuito, o disco é apagado quando o serviço reinicia. Para o MVP isso não é problema, porque os dados de demonstração são recriados sozinhos. Também há um `Dockerfile` para rodar em qualquer servidor com Docker:
 
@@ -94,6 +100,9 @@ Copie `.env.example` para `.env` se quiser mudar algo:
 | `NOTES_KEY` | gerada em `data/notes.key` | Chave de criptografia do prontuário (64 caracteres hexadecimais ou uma frase longa) |
 | `VIDEO_BASE_URL` | `https://meet.jit.si/` | Serviço de videochamada |
 | `NODE_ENV` | — | Use `production` para cookies só em HTTPS |
+| `PUSH` | ligado | `off` desliga o envio de avisos com o app fechado (Web Push) |
+| `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` | gerados em `data/vapid.json` | Chaves do Web Push, em base64url. Fixe-as para as inscrições sobreviverem a um disco apagado |
+| `VAPID_SUBJECT` | endereço do repositório | Contato enviado aos serviços de push (`https://...` ou `mailto:...`) |
 
 ## Arquitetura
 
@@ -101,9 +110,11 @@ Copie `.env.example` para `.env` se quiser mudar algo:
 
 ```mermaid
 flowchart LR
-  subgraph Navegador["Navegador (computador ou celular)"]
+  subgraph Navegador["Navegador ou app instalado (computador ou celular)"]
     UI["Interface em JavaScript puro<br/>public/js"]
+    SW["Service worker<br/>public/sw.js"]
   end
+  PS["Serviço de push<br/>(Google, Apple, Mozilla, Microsoft)"]
   subgraph Servidor["Servidor Node.js (sem dependências)"]
     API["API REST<br/>src/routes"]
     M["Motor de emparelhamento<br/>src/matching.js"]
@@ -112,13 +123,19 @@ flowchart LR
     SEC["Senhas, sessões, AES-256-GCM<br/>src/security.js"]
     RT["Distribuidor de eventos (SSE)<br/>src/realtime.js"]
     REM["Lembretes 24 h e 1 h<br/>src/reminders.js"]
+    REC["Pacotes recorrentes<br/>src/recurrence.js"]
+    WP["Web Push (VAPID)<br/>src/push.js"]
   end
   DB[("SQLite<br/>data/mesalva.db")]
   V["Jitsi Meet<br/>videochamada"]
   UI -- "fetch JSON + cookie" --> API
   UI -- "EventSource /api/stream" --> RT
-  API --> M & SL & PR & SEC
+  API --> M & SL & PR & SEC & REC
   API --> DB
+  UI -. "arquivos do app (cache)" .-> SW
+  API -- "notificação" --> WP
+  WP -- "aviso criptografado" --> PS
+  PS --> SW
   API -- "eventos depois do COMMIT" --> RT
   REM -- "a cada minuto" --> DB
   REM --> RT
@@ -139,12 +156,18 @@ me-salva-mvp/
 │   ├── seed.js             dados de demonstração
 │   ├── realtime.js         distribuidor de eventos em tempo real (SSE)
 │   ├── reminders.js        lembretes 24 h e 1 h antes das sessões
-│   └── routes/             auth, me, catalog, appointments, messages, pro, admin, realtime, notifications
+│   ├── recurrence.js       datas, conflitos e sugestões dos pacotes recorrentes
+│   ├── pwa.js              monta o service worker com a versão atual
+│   ├── push.js             Web Push: VAPID, criptografia do aviso e envio
+│   └── routes/             auth, me, catalog, appointments, packages, messages, pro, admin, realtime, notifications, push
 ├── public/
-│   ├── index.html
+│   ├── index.html · offline.html · manifest.webmanifest
+│   ├── sw.js               service worker (app instalável)
+│   ├── icons/              ícones e telas de abertura do app
 │   ├── css/styles.css
-│   └── js/                 core.js, app.js, realtime.js e screens/ (paciente, profissional, comuns, notificações)
-├── test/                   testes de regras, da API e do tempo real (node:test)
+│   └── js/                 core.js, app.js, realtime.js, pwa.js e screens/ (paciente, pacotes, profissional, comuns, notificações)
+├── scripts/icones.mjs      gera os ícones a partir do logo (opcional)
+├── test/                   testes de regras, da API, do tempo real, do app instalável, da recorrência e do Web Push (node:test)
 └── docs/img/               capturas de tela
 ```
 
@@ -166,7 +189,11 @@ Com 10 mil perfis, o ranking leva menos de 300 ms (há um teste para isso).
 | POST | `/api/triage` | Triagem e indicações |
 | GET/POST | `/api/appointments` | Agenda e nova reserva |
 | POST | `/api/payments/:id/pix-simulate` · `/api/payments/:id/card` | Pagamento simulado |
-| POST | `/api/appointments/:id/cancel` · `/finish` · `/no-show` · `/review` | Ciclo da sessão |
+| POST | `/api/appointments/:id/cancel` · `/finish` · `/no-show` · `/review` | Ciclo da sessão (`cancel` com `{ "following": true }` cancela esta e as próximas do pacote) |
+| GET | `/api/pros/:id/recurrence` | Prévia do pacote recorrente: datas, conflitos, sugestões e valores |
+| POST | `/api/packages` · `/api/packages/:id/pix-simulate` | Cria o pacote com um PIX do total e simula o pagamento |
+| GET | `/api/packages/:id` | Pacote com todas as sessões |
+| GET/POST | `/api/push/key` · `/api/push/subscribe` · `/api/push/unsubscribe` | Web Push (avisos com o app fechado) |
 | GET | `/api/appointments/:id/room` | Sala de vídeo |
 | GET/POST | `/api/conversations/:outroId` | Chat (o GET já traz o campo `seen`, o "visto") |
 | POST | `/api/conversations/:outroId/typing` | Avisa que a pessoa está digitando |
@@ -190,12 +217,14 @@ Toda chamada que altera dados exige o cabeçalho `x-ms-client: web` (proteção 
 - Prontuário criptografado com AES-256-GCM e trilha de auditoria (leitura, escrita, entrada na sala, exportação).
 - Os eventos em tempo real só vão para o dono da sessão: o destinatário é sempre decidido pelo servidor a partir do banco, uma conexão só recebe eventos do próprio usuário, e uma mensagem vai apenas para as duas pessoas da conversa. Eventos só saem depois que os dados foram gravados.
 - A notificação nunca leva o texto da mensagem (só "Fulana enviou 3 mensagens"), porque o aviso do sistema pode aparecer na tela bloqueada e o assunto é saúde.
+- O service worker nunca guarda respostas da API: agenda, mensagens e pagamentos não ficam no aparelho.
+- Web Push: o aviso vai criptografado para o aparelho (RFC 8291), o pedido é assinado com VAPID (RFC 8292), e o servidor só envia para os serviços de push conhecidos (Google, Mozilla, Apple e Microsoft), o que impede usar a inscrição para fazer o servidor acessar outros endereços.
 - A triagem não faz diagnóstico, e a plataforma não substitui serviços de emergência (CVV 188, SAMU 192).
 
 ## Próximos passos (Fase 1 do PIPE)
 
 - Validar as perguntas da triagem e os pesos do motor com especialistas em TEA/ABA.
-- Aplicativo instalável (service worker), para o aviso do sistema funcionar no Android e no iPhone (previsto para a v1.2), e depois aplicativo React Native e banco PostgreSQL/PostGIS. As mensagens em tempo real já foram feitas na v1.1; com mais de um servidor, o distribuidor de eventos precisará de um canal compartilhado (Redis ou LISTEN/NOTIFY do PostgreSQL).
+- Aplicativo React Native e banco PostgreSQL/PostGIS. O app instalável (PWA) e os avisos com o app fechado já foram feitos na v1.2, e as mensagens em tempo real na v1.1; com mais de um servidor, o distribuidor de eventos precisará de um canal compartilhado (Redis ou LISTEN/NOTIFY do PostgreSQL).
 - Integração com gateway de pagamento (PIX e cartão com split) e verificação automática do registro profissional.
 - Teste de invasão independente e relatório de impacto à proteção de dados (RIPD).
 - Piloto com usuários reais após aprovação do Comitê de Ética.

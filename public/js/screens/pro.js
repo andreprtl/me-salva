@@ -3,6 +3,8 @@ import {
   S, A, F, I, screen, api, run, replace, refresh, top, closeLayer, confirmSheet, toast,
   esc, ic, logoMark, avatar, backBtn, brl, brl2, nota, when, dayLabel, DOW, DOWL, chipCheck, toggle, $, bellBtn,
 } from '../core.js';
+import { installInvite } from '../pwa.js';
+import { recurTag, openPackCancel } from './packages.js';
 
 const firstName = (n) => n.replace(/^Dra?\.\s*/, '').split(' ')[0];
 
@@ -22,6 +24,7 @@ screen('painel', {
     <main class="scroll gut">
       ${p.status === 'pending' ? `<div class="banner">${ic('clock')}<div><b>Seu registro está em verificação</b><span>Conferimos ${esc(p.reg)} no cadastro do conselho. Enquanto isso, complete seu perfil e seus horários; seu perfil aparece na busca assim que for aprovado.</span></div></div>` : ''}
       ${p.status === 'rejected' ? `<div class="banner warn">${ic('info')}<div><b>Não conseguimos confirmar seu registro</b><span>Confira o número em Meu perfil e fale com a equipe Me Salva.</span></div></div>` : ''}
+      ${installInvite()}
       <section class="stats">
         <div class="stat"><span>Sessões no mês</span><b>${d.sessions_month}</b><em>${diff >= 0 ? '+' : ''}${diff} vs. mesmo período do mês passado</em></div>
         <div class="stat"><span>Agenda ocupada</span><b>${cur.pct}%</b><em>era ${first.pct}% em ${first.month}</em></div>
@@ -34,7 +37,7 @@ screen('painel', {
             <div class="occ">${d.occupancy.map((o, i) => `<div class="occ-c ${i === d.occupancy.length - 1 ? 'last' : ''}" title="${o.used} de ${o.capacity} horários"><i style="height:${Math.max(4, o.pct)}%"><b>${o.pct}%</b></i><span>${o.month}</span></div>`).join('')}</div>
             <div class="sum"><div class="sum-r"><span>Sessões realizadas no mês</span><b>${d.finance.done}</b></div><div class="sum-r"><span>Valor das sessões</span><b>${brl2(d.finance.gross)}</b></div><div class="sum-r"><span>Comissão Me Salva (12%)</span><b>− ${brl2(d.finance.fee)}</b></div><div class="sum-r sum-t"><span>Você recebe</span><b>${brl2(d.finance.net)}</b></div></div></section>
           <section class="sec"><div class="sec-h"><h2 class="h2">Hoje</h2><button class="link" data-a="tab" data-v="proagenda">Ver agenda</button></div>
-            ${d.today.length ? d.today.map((a) => `<div class="card appt"><div class="datebox" style="width:58px"><b style="font-size:15px">${a.start.slice(11)}</b></div><div class="grow"><b>${esc(a.patient_name)}</b><span>${ic(a.modality === 'online' ? 'video' : 'pin')}${a.modality === 'online' ? 'Online' : 'Presencial'}${a.social ? ' · <span class="soc">vaga social</span>' : ''}</span></div>
+            ${d.today.length ? d.today.map((a) => `<div class="card appt"><div class="datebox" style="width:58px"><b style="font-size:15px">${a.start.slice(11)}</b></div><div class="grow"><b>${esc(a.patient_name)}${a.package_id ? ' <span class="tag lav">' + ic('repeat') + 'recorrente</span>' : ''}</b><span>${ic(a.modality === 'online' ? 'video' : 'pin')}${a.modality === 'online' ? 'Online' : 'Presencial'}${a.social ? ' · <span class="soc">vaga social</span>' : ''}</span></div>
               ${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar</button>` : ''}<button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário de ${esc(a.patient_name)}">${ic('file')}</button></div>`).join('')
             : `<div class="card small muted">Nenhum atendimento confirmado para hoje. ${d.upcoming} sessões nos próximos dias.</div>`}
           </section>
@@ -67,14 +70,14 @@ screen('proagenda', {
     <div class="gut" style="padding-bottom:12px;flex:none"><div class="seg" style="max-width:420px"><button class="${S.proTab === 'up' ? 'on' : ''}" data-a="proTab" data-v="up">Próximas</button><button class="${S.proTab === 'past' ? 'on' : ''}" data-a="proTab" data-v="past">Histórico</button></div></div>
     <main class="scroll gut">${Object.keys(groups).length ? Object.entries(groups).slice(0, 30).map(([day, items]) => `<section class="sec"><div class="lbl">${dayLabel(day)}</div><div class="list">${items.map((a) => `<div class="li static" style="flex-wrap:wrap">
         <b class="num" style="width:46px">${a.start.slice(11)}</b>
-        <div class="li-t"><b>${esc(a.patient_name)}</b><span>${a.modality === 'online' ? 'Online' : 'Presencial'} · ${a.social ? 'vaga social · ' : ''}${brl2(a.pro_amount)} para você</span></div>
+        <div class="li-t"><b>${esc(a.patient_name)} ${recurTag(d.packages?.[a.package_id])}</b><span>${a.modality === 'online' ? 'Online' : 'Presencial'} · ${a.social ? 'vaga social · ' : ''}${brl2(a.pro_amount)} para você</span></div>
         ${S.proTab === 'past' ? status[a.status] || '' : ''}
         ${S.proTab === 'up' ? `<div class="row" style="gap:6px;flex-wrap:wrap">
           ${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar</button>` : ''}
           ${started(a) || S.meta.demoMode ? `<button class="btn btn-ghost btn-sm" data-a="markDone" data-v="${a.id}">${ic('check')}Realizada</button><button class="btn btn-ghost btn-sm" data-a="markNoShow" data-v="${a.id}">Falta</button>` : ''}
           <button class="icon-btn" data-a="go" data-v="chat" data-p="${a.patient_id}" aria-label="Mensagem">${ic('chat')}</button>
           <button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário">${ic('file')}</button>
-          <button class="icon-btn" data-a="proCancel" data-v="${a.id}" aria-label="Cancelar sessão">${ic('x')}</button></div>`
+          <button class="icon-btn" data-a="${a.package_id ? 'proCancelPack' : 'proCancel'}" data-v="${a.id}" aria-label="Cancelar sessão">${ic('x')}</button></div>`
         : `<button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário">${ic('file')}</button>`}
       </div>`).join('')}</div></section>`).join('')
       : `<div class="empty">${ic('cal')}<div>${S.proTab === 'up' ? 'Nenhuma sessão marcada. Confira se seus horários estão abertos.' : 'Ainda não há histórico.'}</div></div>`}</main>`;
@@ -83,6 +86,13 @@ screen('proagenda', {
 A.proTab = (el) => { S.proTab = el.dataset.v; replace('proagenda'); };
 A.markDone = (el) => run(async () => { await api(`/api/appointments/${el.dataset.v}/finish`, { method: 'POST' }); toast('Sessão marcada como realizada. O paciente já pode avaliar.'); refresh(); }, el);
 A.markNoShow = (el) => run(async () => { await api(`/api/appointments/${el.dataset.v}/no-show`, { method: 'POST' }); toast('Falta registrada.'); refresh(); }, el);
+// Sessão de pacote recorrente: "só esta" ou "esta e as próximas".
+A.proCancelPack = (el) => {
+  const d = top().d;
+  const a = d.upcoming.find((x) => x.id === Number(el.dataset.v));
+  const rest = d.upcoming.filter((x) => x.package_id === a.package_id && x.start >= a.start && ['confirmed', 'pending_payment'].includes(x.status));
+  openPackCancel(a.id, rest.length, `${rest[0].start.slice(8, 10)}/${rest[0].start.slice(5, 7)} a ${rest.at(-1).start.slice(8, 10)}/${rest.at(-1).start.slice(5, 7)}`);
+};
 A.proCancel = (el) => confirmSheet({ title: 'Cancelar esta sessão?', text: 'O paciente recebe um aviso no chat e o valor pago é devolvido.', ok: 'Cancelar sessão', danger: true }, async () => {
   await api(`/api/appointments/${el.dataset.v}/cancel`, { method: 'POST' }); closeLayer(); toast('Sessão cancelada e paciente avisado.'); refresh();
 });

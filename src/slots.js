@@ -9,6 +9,15 @@ export function offersSocial(pro) {
   return Boolean(pro.is_new && pro.supervisor && pro.social_price);
 }
 
+// Horários fixos de vaga social da semana: as primeiras N entradas da disponibilidade, de segunda a domingo,
+// onde N é social_weekly. Devolve um Set com 'diaDaSemana|HH:MM'. Como a vaga social é uma propriedade do
+// horário, nenhuma semana passa de N vagas sociais fixas, nem com pacotes recorrentes (v1.2).
+export function socialKeys(pro, template) {
+  if (!offersSocial(pro)) return new Set();
+  const ordered = [...template].sort((a, b) => DAY_ORDER(a.weekday) - DAY_ORDER(b.weekday) || a.hour.localeCompare(b.hour));
+  return new Set(ordered.slice(0, pro.social_weekly || 0).map((t) => `${t.weekday}|${t.hour}`));
+}
+
 /**
  * @param pro       perfil do profissional (is_new, supervisor, social_price, social_weekly, auto_fill)
  * @param template  disponibilidade semanal: [{ weekday: 0-6, hour: 'HH:MM' }]
@@ -20,8 +29,7 @@ export function buildSlots({ pro, template, taken = new Set(), now, days = 14, m
   const nowMin = toMinutes(now);
   const social = offersSocial(pro);
   // As primeiras N entradas da semana (de segunda a domingo) são vagas sociais fixas.
-  const ordered = [...template].sort((a, b) => DAY_ORDER(a.weekday) - DAY_ORDER(b.weekday) || a.hour.localeCompare(b.hour));
-  const fixed = new Set(social ? ordered.slice(0, pro.social_weekly || 0).map((t) => `${t.weekday}|${t.hour}`) : []);
+  const fixed = socialKeys(pro, template);
 
   const out = [];
   for (let i = 0; i < days; i++) {

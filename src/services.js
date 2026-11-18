@@ -3,7 +3,7 @@
 import { json } from './db.js';
 import { nowSP, toMinutes } from './time.js';
 import { buildSlots } from './slots.js';
-import { BAIRROS, distanceKm } from '../public/js/shared/data.js';
+import { BAIRROS, distanceKm, weekdaysText } from '../public/js/shared/data.js';
 
 // Status que ocupam um horário na agenda (uma sessão cancelada libera o horário).
 const ACTIVE = "('pending_payment','confirmed','done','no_show')";
@@ -22,12 +22,42 @@ export function notificationView(n) {
 
 // hub é o distribuidor de eventos em tempo real; sem ele (scripts e testes de regra), os eventos são ignorados.
 export function createServices(db, config, hub = { send() {} }) {
-  // Reservas aguardando pagamento por mais de 15 minutos liberam o horário.
+  // Reservas aguardando pagamento por mais de 15 minutos liberam o horário (também as sessões de um pacote
+  // cujo PIX não foi pago: o pacote inteiro vence junto).
   function expirePending() {
     const now = Date.now();
     db.run(`UPDATE payments SET status='expired' WHERE status='pending' AND appointment_id IN
             (SELECT id FROM appointments WHERE status='pending_payment' AND expires_at < ?)`, now);
     db.run(`UPDATE appointments SET status='cancelled' WHERE status='pending_payment' AND expires_at < ?`, now);
+    db.run(`UPDATE packages SET status='expired' WHERE status='pending' AND expires_at < ?`, now);
+  }
+
+  // Horários das sessões ativas (aguardando pagamento ou confirmadas) de um paciente entre duas datas,
+  // com qualquer profissional. O agendamento recorrente usa isto para não marcar duas sessões ao mesmo tempo.
+  const patientBusy = (patientId, fromDay, toDay) => db.all(
+    `SELECT start FROM appointments WHERE patient_id = ? AND status IN ('pending_payment','confirmed') AND start >= ? AND start < ?`,
+    patientId, fromDay, toDay + 'T99').map((r) => r.start);
+
+  // Resumo de um pacote recorrente para a interface: padrão em texto ('seg e qua, 08:00'), contagens e valores.
+  function packageView(pk) {
+    if (!pk) return null;
+    const weekdays = json(pk.weekdays);
+    const c = db.get(`SELECT COUNT(*) total,
+                        SUM(status IN ('confirmed','pending_payment')) upcoming, SUM(status = 'done') done,
+                        SUM(status = 'no_show') no_show, SUM(status = 'cancelled') cancelled,
+                        SUM(CASE WHEN status <> 'cancelled' THEN amount ELSE 0 END) active_amount,
+                        MIN(start) first, MAX(start) last
+                      FROM appointments WHERE package_id = ?`, pk.id);
+    const pro = db.get('SELECT u.name, p.title, p.color FROM users u JOIN pros p ON p.user_id = u.id WHERE u.id = ?', pk.pro_id);
+    return {
+      id: pk.id, patient_id: pk.patient_id, pro_id: pk.pro_id, weekdays, time: pk.time, weeks: pk.weeks, modality: pk.modality,
+      label: `${weekdaysText(weekdays)}, ${pk.time}`, per_week: weekdays.length,
+      status: pk.status, amount: pk.amount, expires_at: pk.expires_at, paid_at: pk.paid_at, created_at: pk.created_at,
+      pro_name: pro?.name || 'Profissional', pro_title: pro?.title || '', pro_color: pro?.color || '#2F7D69',
+      patient_name: pk.patient_id ? db.get('SELECT name FROM users WHERE id = ?', pk.patient_id)?.name || 'Conta excluída' : 'Conta excluída',
+      sessions: c.total, upcoming: c.upcoming || 0, done: c.done || 0, no_show: c.no_show || 0, cancelled: c.cancelled || 0,
+      active_amount: c.active_amount || 0, first: c.first, last: c.last,
+    };
   }
 
   // Profissional com nota média e número de avaliações calculados a partir da tabela reviews.
@@ -166,6 +196,6 @@ export function createServices(db, config, hub = { send() {} }) {
 
   return {
     expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts,
-    notify, readChatNotifications, roomOpen, distance,
+    notify, readChatNotifications, roomOpen, distance, patientBusy, packageView,
   };
 }

@@ -7,8 +7,8 @@ import { findSlot } from '../slots.js';
 import { pixCode, luhn, randomId } from '../security.js';
 import { int, oneOf, str, stamp, listOf, bad } from '../validate.js';
 
-// Minutos que um horário fica reservado aguardando o pagamento.
-const HOLD_MIN = 15;
+// Minutos que um horário fica reservado aguardando o pagamento (também vale para os pacotes, em packages.js).
+export const HOLD_MIN = 15;
 // Destaques que o paciente pode marcar na avaliação.
 export const REVIEW_TAGS = ['Acolhimento', 'Pontualidade', 'Me senti ouvido(a)', 'Explicações claras', 'Boa conexão de vídeo', 'Indicaria'];
 
@@ -17,6 +17,8 @@ const fmtDay = (start) => {
   const [y, m, d] = start.slice(0, 10).split('-');
   return `${d}/${m}/${y} às ${start.slice(11)}`;
 };
+// 'AAAA-MM-DDTHH:MM' → 'DD/MM'.
+const dm = (start) => `${start.slice(8, 10)}/${start.slice(5, 7)}`;
 
 export default function appointmentRoutes(r, { db, config, svc }) {
   const getAppt = (id) => db.get('SELECT * FROM appointments WHERE id = ?', id);
@@ -63,14 +65,17 @@ export default function appointmentRoutes(r, { db, config, svc }) {
       .map((a) => ({ ...a, patient_name: a.patient_name || 'Conta excluída', room_open: svc.roomOpen(a) }));
   }
 
-  // Separa as próximas (confirmadas ou aguardando pagamento) das anteriores.
+  // Separa as próximas (confirmadas ou aguardando pagamento) das anteriores. packages traz o resumo de cada
+  // pacote recorrente que aparece na lista (v1.2), para a agenda agrupar as sessões do mesmo pacote.
   r.get('/api/appointments', requireRole('patient', 'pro'), (req) => {
     const now = nowSP();
     const all = listFor(req.user);
+    const ids = [...new Set(all.map((a) => a.package_id).filter(Boolean))];
     return {
       now,
       upcoming: all.filter((a) => ['confirmed', 'pending_payment'].includes(a.status) && toMinutes(a.start) >= toMinutes(now) - 60),
       past: all.filter((a) => !(['confirmed', 'pending_payment'].includes(a.status) && toMinutes(a.start) >= toMinutes(now) - 60)).reverse(),
+      packages: Object.fromEntries(ids.map((id) => [id, svc.packageView(db.get('SELECT * FROM packages WHERE id = ?', id))])),
     };
   });
 
@@ -160,6 +165,8 @@ export default function appointmentRoutes(r, { db, config, svc }) {
   });
 
   // Cancelamento: paciente até 24 h antes (com reembolso); profissional a qualquer momento.
+  // Numa sessão de pacote recorrente (v1.2), { following: true } cancela esta e as próximas sessões do pacote.
+  // A regra de 24 h vale para a sessão escolhida; as seguintes são mais tarde, então também a cumprem.
   r.post('/api/appointments/:id/cancel', requireRole('patient', 'pro'), (req) => {
     const a = getAppt(Number(req.params.id));
     mustOwn(req, a);
@@ -168,23 +175,41 @@ export default function appointmentRoutes(r, { db, config, svc }) {
     if (req.user.role === 'patient' && a.status === 'confirmed' && hoursLeft < 24) {
       throw bad('Cancelamentos pelo paciente são aceitos até 24 horas antes. Fale com o profissional pelo chat.');
     }
+    const following = req.body.following === true;
+    if (following && !a.package_id) throw bad('Esta sessão não faz parte de um pacote.');
+    const targets = following
+      ? db.all("SELECT * FROM appointments WHERE package_id = ? AND start >= ? AND status IN ('confirmed','pending_payment') ORDER BY start", a.package_id, a.start)
+      : [a];
+    const by = req.user.role === 'pro' ? 'profissional' : 'paciente';
     db.tx(() => {
-      db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", a.id);
-      db.run("UPDATE payments SET status = CASE status WHEN 'paid' THEN 'refunded' ELSE 'expired' END WHERE appointment_id = ? AND status IN ('paid','pending')", a.id);
-      if (a.status === 'confirmed') {
-        svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system',
-          body: `Sessão de ${fmtDay(a.start)} cancelada pelo ${req.user.role === 'pro' ? 'profissional' : 'paciente'}. O valor pago será devolvido.` });
-        // Notificação só para o outro lado: quem cancelou já sabe.
-        const n = names(a);
-        const when = whenText(a.start);
-        if (req.user.role === 'pro') {
-          svc.notify(a.patient_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.pro} cancelou a sessão de ${when}. O valor pago será devolvido.`, screen: 'agenda' });
-        } else {
-          svc.notify(a.pro_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.patient} cancelou a sessão de ${when}.`, screen: 'proagenda' });
-        }
+      for (const t of targets) {
+        db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", t.id);
+        db.run("UPDATE payments SET status = CASE status WHEN 'paid' THEN 'refunded' ELSE 'expired' END WHERE appointment_id = ? AND status IN ('paid','pending')", t.id);
       }
+      // Pacote que ainda aguardava o PIX e ficou sem nenhuma sessão: cancelado.
+      if (a.package_id) {
+        db.run(`UPDATE packages SET status = 'cancelled' WHERE id = ? AND status = 'pending'
+                AND NOT EXISTS (SELECT 1 FROM appointments WHERE package_id = ? AND status = 'pending_payment')`, a.package_id, a.package_id);
+      }
+      const paid = targets.filter((t) => t.status === 'confirmed');
+      if (!paid.length) return;
+      // Um aviso só no chat e uma notificação só para o outro lado (quem cancelou já sabe), mesmo com várias sessões.
+      const n = names(a);
+      if (paid.length === 1) {
+        const when = whenText(paid[0].start);
+        svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system',
+          body: `Sessão de ${fmtDay(paid[0].start)} cancelada pelo ${by}. O valor pago será devolvido.` });
+        if (req.user.role === 'pro') svc.notify(a.patient_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.pro} cancelou a sessão de ${when}. O valor pago será devolvido.`, screen: 'agenda' });
+        else svc.notify(a.pro_id, { kind: 'cancelled', title: 'Sessão cancelada', body: `${n.patient} cancelou a sessão de ${when}.`, screen: 'proagenda' });
+        return;
+      }
+      const range = `de ${dm(paid[0].start)} a ${dm(paid.at(-1).start)}`;
+      svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system',
+        body: `Pacote: ${paid.length} sessões canceladas pelo ${by} (${range}). O valor pago será devolvido.` });
+      if (req.user.role === 'pro') svc.notify(a.patient_id, { kind: 'cancelled', title: 'Sessões canceladas', body: `${n.pro} cancelou ${paid.length} sessões do pacote (${range}). O valor pago será devolvido.`, screen: 'agenda' });
+      else svc.notify(a.pro_id, { kind: 'cancelled', title: 'Sessões canceladas', body: `${n.patient} cancelou ${paid.length} sessões do pacote (${range}).`, screen: 'proagenda' });
     });
-    return { ok: true };
+    return { ok: true, cancelled: targets.length };
   });
 
   // Link da sala de vídeo (Jitsi), liberado só para os dois participantes e no horário certo.

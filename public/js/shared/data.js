@@ -58,3 +58,13 @@ export const TRIAGE = {
     'Sensível a barulhos, texturas ou luzes', 'Dificuldades na escola',
   ],
 };
+
+// Agendamento recorrente (v1.2): durações oferecidas, em semanas, e quantos dias por semana um pacote pode ter.
+export const RECURRENCE = { weeks: [4, 8, 12], maxDays: 5 };
+
+// Dias da semana em texto curto, de segunda a domingo: [1, 3, 5] → 'seg, qua e sex'.
+const DOW_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+export function weekdaysText(days) {
+  const names = [...new Set(days)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => DOW_SHORT[d]);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} e ${names.at(-1)}` : names[0] || '';
+}

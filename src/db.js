@@ -51,10 +51,29 @@ CREATE TABLE IF NOT EXISTS availability(
   hour TEXT NOT NULL,
   PRIMARY KEY(pro_id, weekday, hour)
 );
+-- v1.2: pacote de sessões recorrentes (por exemplo, seg e qua às 08:00 por 8 semanas). As sessões continuam
+-- sendo linhas de appointments (com package_id), cada uma com seu pagamento; o pacote guarda o padrão
+-- escolhido e o PIX único com o valor total.
+CREATE TABLE IF NOT EXISTS packages(
+  id INTEGER PRIMARY KEY,
+  patient_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  pro_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  weekdays TEXT NOT NULL,              -- JSON, ex.: [1,3] (0 = domingo)
+  time TEXT NOT NULL,                  -- horário escolhido, 'HH:MM' (uma sessão pode ter ficado em horário alternativo)
+  weeks INTEGER NOT NULL,
+  modality TEXT NOT NULL CHECK(modality IN ('online','presencial')),
+  amount INTEGER NOT NULL,             -- total pago pelo paciente, em centavos
+  status TEXT NOT NULL CHECK(status IN ('pending','paid','expired','cancelled')),
+  pix_code TEXT,
+  expires_at INTEGER,
+  paid_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 CREATE TABLE IF NOT EXISTS appointments(
   id INTEGER PRIMARY KEY,
   patient_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   pro_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,   -- v1.2: sessão de um pacote recorrente
   start TEXT NOT NULL,                 -- horário local de São Paulo, 'AAAA-MM-DDTHH:MM'
   modality TEXT NOT NULL CHECK(modality IN ('online','presencial')),
   social INTEGER NOT NULL DEFAULT 0,
@@ -74,6 +93,7 @@ CREATE TABLE IF NOT EXISTS payments(
   id INTEGER PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   appointment_id INTEGER REFERENCES appointments(id) ON DELETE SET NULL,
+  package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,   -- v1.2: cobrança que faz parte do PIX de um pacote
   kind TEXT NOT NULL CHECK(kind IN ('session','plus')),
   method TEXT NOT NULL CHECK(method IN ('pix','card')),
   amount INTEGER NOT NULL,
@@ -157,6 +177,21 @@ CREATE TABLE IF NOT EXISTS reminders(
 );
 `;
 
+// Colunas acrescentadas depois da primeira versão. CREATE TABLE IF NOT EXISTS não mexe numa tabela que já
+// existe, então um banco antigo (data/mesalva.db da v1.0 ou da v1.1) ganha as colunas aqui, sem perder dados.
+const ADDED_COLUMNS = [
+  ['appointments', 'package_id', 'INTEGER REFERENCES packages(id) ON DELETE SET NULL'],
+  ['payments', 'package_id', 'INTEGER REFERENCES packages(id) ON DELETE SET NULL'],
+];
+function migrate(db) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+  // Índices que dependem das colunas novas (criados depois delas).
+  db.exec('CREATE INDEX IF NOT EXISTS appt_package ON appointments(package_id, start);');
+}
+
 // Abre o banco e devolve uma interface pequena: all/get/run com parâmetros '?', exec, tx (transação)
 // e afterCommit (avisos em tempo real que só podem sair depois que os dados foram gravados).
 // As consultas preparadas ficam em cache para não serem recompiladas a cada chamada.
@@ -167,6 +202,7 @@ export function openDb(file) {
   // WAL permite leituras enquanto uma escrita está em andamento.
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  migrate(db);
   const cache = new Map();
   const st = (sql) => {
     let s = cache.get(sql);

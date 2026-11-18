@@ -1,6 +1,10 @@
 // Configuração lida de variáveis de ambiente (veja .env.example).
 // Todas têm valor padrão, então o projeto roda sem nenhum arquivo .env.
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+
+// Versão do app (do package.json): aparece em Configurações e entra na versão do service worker.
+export const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const env = process.env;
 

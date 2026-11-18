@@ -9,6 +9,8 @@ export { COOKIE, requireUser, requireRole } from './guards.js';
 import { createServices } from './services.js';
 import { createHub } from './realtime.js';
 import { createReminders } from './reminders.js';
+import { createServiceWorker, SW_CSP } from './pwa.js';
+import { APP_VERSION } from './config.js';
 import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import catalogRoutes from './routes/catalog.js';
@@ -41,6 +43,7 @@ export function createApp({ db, config, notesKey }) {
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
   for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));
+  const sw = createServiceWorker({ publicDir, appVersion: APP_VERSION });
 
   // Identifica o usuário pelo cookie de sessão; o token é procurado pelo hash SHA-256 guardado no banco.
   function loadUser(req) {
@@ -81,6 +84,12 @@ export function createApp({ db, config, notesKey }) {
         return sendJson(res, 200, { ok: true });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(404, 'Não encontrado.');
+      // Service worker do app instalável (v1.2): montado na hora, com a versão atual (src/pwa.js).
+      // no-cache faz o navegador sempre conferir se há versão nova.
+      if (url.pathname === '/sw.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Security-Policy': SW_CSP });
+        return res.end(req.method === 'HEAD' ? undefined : sw.build().body);
+      }
       if (serveStatic(publicDir, url.pathname, res)) return;
       serveStatic(publicDir, '/index.html', res); // as rotas da interface são resolvidas no navegador
     // Erros esperados (HttpError) viram mensagens para o usuário; os inesperados vão para o log e recebem uma mensagem genérica.
@@ -91,6 +100,7 @@ export function createApp({ db, config, notesKey }) {
     }
   }
   handle.ctx = ctx;
+  handle.sw = sw;
   handle.close = () => hub.close();
   return handle;
 }

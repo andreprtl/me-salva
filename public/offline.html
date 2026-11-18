@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sem conexão · Me Salva</title>
+  <meta name="theme-color" content="#1E4D40">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Roboto+Slab:wght@700;800;900&display=swap">
+  <!-- Página offline (v1.2): o service worker mostra esta página quando o app é aberto sem internet.
+       Não depende do servidor nem de JavaScript: os botões são links comuns (tel:188 liga para o CVV). -->
+  <script src="/js/theme.js"></script>
+  <style>
+    :root{--bg:#FFF9F3;--surface:#FFFFFF;--ink:#15302A;--muted:#5B6D67;--brand:#1E4D40;--on-brand:#FFF9F3;--logo:#1E4D40;--line:#E8DFD3;--lav:#6E4FCB;--on-lav:#FFFFFF;--lav-bg:#EDE7FB;color-scheme:light}
+    :root.dark{--bg:#0E1B18;--surface:#152723;--ink:#E7F1ED;--muted:#9AB0A9;--brand:#2D7A66;--on-brand:#F3FBF8;--logo:#CDEDE3;--line:#24403A;--lav:#B6A0F7;--on-lav:#1A1430;--lav-bg:#29233F;color-scheme:dark}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{max-width:460px;margin:0 auto;padding:max(40px,env(safe-area-inset-top)) max(22px,env(safe-area-inset-right)) max(32px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:18px;text-align:center}
+    .mark{color:var(--logo);margin:0 auto}
+    h1{font-family:"Roboto Slab",Rockwell,Georgia,serif;font-weight:800;font-size:28px;line-height:1.15;margin:0;color:var(--ink)}
+    p{margin:0;line-height:1.55;color:var(--muted)}
+    .btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;border-radius:999px;font-weight:600;font-size:15px;text-decoration:none;padding:0 22px}
+    .primary{background:var(--brand);color:var(--on-brand)}
+    .ghost{border:1.5px solid var(--line);color:var(--ink);background:var(--surface)}
+    .crisis{background:var(--lav-bg);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:left}
+    .crisis b{font-size:16px;color:var(--ink)}
+    .crisis .btn{background:var(--lav);color:var(--on-lav)}
+    .crisis .btn.ghost{background:var(--surface);color:var(--ink)}
+    .small{font-size:12.5px}
+    footer{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <main>
+    <svg class="mark" width="92" height="92" viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M33 7c-8.5 0-14.5 6-14.5 13.8 0 4.4 1.8 7.4 3.5 9.5v6.2h13l.8-4h3.8c2 0 3-1.1 3-3v-3.4l2.6-1.1-2.7-4.6C42.5 12.8 38.6 7 33 7z" fill="currentColor"/>
+      <g fill="none" stroke="var(--bg)" stroke-width="2"><circle cx="29" cy="18" r="3.4" stroke-dasharray="2.2 1.4"/><circle cx="36.5" cy="24" r="2.8" stroke-dasharray="1.8 1.3"/></g>
+      <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26c1 9 5.5 16 12.5 20.5l4 3.5v8.5"/><path d="M14 32c1.4 5.5 4.6 9.6 9.2 12.3"/><path d="M56 26c-1 9-5.5 16-12.5 20.5l-4 3.5v8.5"/><path d="M50 32c-1.4 5.5-4.6 9.6-9.2 12.3"/></g>
+    </svg>
+    <h1>Você está sem internet</h1>
+    <p>O Me Salva precisa de conexão para mostrar sua agenda, suas conversas e os profissionais. Quando a internet voltar, é só tentar de novo.</p>
+    <a class="btn primary" href="/">Tentar de novo</a>
+    <section class="crisis" aria-label="Ajuda imediata">
+      <b>Precisa de ajuda agora?</b>
+      <p>O CVV atende de graça, 24 horas, pelo telefone 188. A ligação funciona mesmo sem internet.</p>
+      <a class="btn" href="tel:188">Ligar para o CVV (188)</a>
+      <a class="btn ghost" href="tel:192">SAMU (192)</a>
+      <p class="small">Em risco imediato, vá ao pronto-socorro mais próximo. O Me Salva não é um serviço de emergência.</p>
+    </section>
+    <footer>Me Salva · projeto acadêmico</footer>
+  </main>
+</body>
+</html>

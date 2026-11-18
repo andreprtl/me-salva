@@ -3,6 +3,7 @@
 // As notificações novas chegam pelo canal em tempo real (realtime.js, evento 'notification').
 import { S, A, LAYERS, SCREENS, api, run, go, tab, top, refresh, openLayer, closeLayer, renderLayer, toast, esc, ic, ago, toggle } from '../core.js';
 import { onLive, setCounts } from '../realtime.js';
+import { systemNotice } from '../pwa.js';
 
 // Ícone de cada tipo de notificação.
 const KIND_ICON = { message: 'chat', confirmed: 'check', cancelled: 'x', reminder: 'clock', review: 'star', verified: 'verified', rejected: 'info' };
@@ -50,7 +51,7 @@ A.openNotif = (el) => {
   openTarget(n);
 };
 // Abre a tela de uma notificação (por exemplo, a conversa, a agenda ou o painel).
-function openTarget(n) {
+export function openTarget(n) {
   if (!n.screen || !SCREENS[n.screen]) return;
   const p = n.param == null ? undefined : (/^\d+$/.test(n.param) ? Number(n.param) : n.param);
   if (TAB_SCREENS.has(n.screen)) { tab(n.screen); return; }
@@ -97,18 +98,21 @@ const asked = () => { try { return localStorage.getItem('ms-notify-asked') === '
 
 // Mostra o aviso do sistema (só com a aba em segundo plano, permissão dada e preferência ligada).
 // A etiqueta (tag) é a mesma em todas as abas: o sistema mostra um aviso só, mesmo com várias abas abertas.
+// Desde a v1.2 o aviso sai pelo service worker (public/js/pwa.js), o único caminho no Android e no iPhone;
+// o toque no aviso volta para cá pela mensagem 'ms-open'.
 function systemNotify(n) {
   if (!canNotify() || Notification.permission !== 'granted' || !notifyOn()) return;
-  try {
-    const sys = new Notification(n.title, { body: n.body, tag: `ms-${n.id}`, icon: '/favicon.svg', lang: 'pt-BR' });
-    sys.onclick = () => {
-      window.focus();
-      sys.close();
-      api(`/api/notifications/${n.id}/read`, { method: 'POST' }).then((r) => setCounts({ notifications: r.unread })).catch(() => {});
-      openTarget(n);
-    };
-  } catch { /* no Android, o aviso do sistema depende do service worker, que chega com o app instalável (v1.2) */ }
+  systemNotice(n, () => openFromSystem(n));
 }
+// Toque num aviso do sistema: marca como lida e abre a tela certa.
+function openFromSystem(n) {
+  if (n.id) api(`/api/notifications/${n.id}/read`, { method: 'POST' }).then((r) => setCounts({ notifications: r.unread })).catch(() => {});
+  if (S.user) openTarget(n);
+}
+// O service worker avisa que a pessoa tocou num aviso do sistema (com o app já aberto).
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'ms-open' && e.data.notification) openFromSystem(e.data.notification);
+});
 
 // Pede a permissão do navegador. Só é chamado por um clique da pessoa, nunca ao abrir a página.
 async function askNotify() {

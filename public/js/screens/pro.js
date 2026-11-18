@@ -3,6 +3,7 @@ import {
   S, A, F, I, screen, api, run, replace, refresh, top, closeLayer, confirmSheet, toast,
   esc, ic, logoMark, avatar, backBtn, brl, brl2, nota, when, dayLabel, DOW, DOWL, chipCheck, toggle, $, bellBtn,
 } from '../core.js';
+import { installInvite } from '../pwa.js';
 
 const firstName = (n) => n.replace(/^Dra?\.\s*/, '').split(' ')[0];
 
@@ -22,6 +23,7 @@ screen('painel', {
     <main class="scroll gut">
       ${p.status === 'pending' ? `<div class="banner">${ic('clock')}<div><b>Seu registro está em verificação</b><span>Conferimos ${esc(p.reg)} no cadastro do conselho. Enquanto isso, complete seu perfil e seus horários; seu perfil aparece na busca assim que for aprovado.</span></div></div>` : ''}
       ${p.status === 'rejected' ? `<div class="banner warn">${ic('info')}<div><b>Não conseguimos confirmar seu registro</b><span>Confira o número em Meu perfil e fale com a equipe Me Salva.</span></div></div>` : ''}
+      ${installInvite()}
       <section class="stats">
         <div class="stat"><span>Sessões no mês</span><b>${d.sessions_month}</b><em>${diff >= 0 ? '+' : ''}${diff} vs. mesmo período do mês passado</em></div>
         <div class="stat"><span>Agenda ocupada</span><b>${cur.pct}%</b><em>era ${first.pct}% em ${first.month}</em></div>

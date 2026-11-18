@@ -6,6 +6,7 @@ import {
 } from '../core.js';
 import { onLive, startLive, stopLive, setCounts } from '../realtime.js';
 import { notifyRow } from './notifications.js';
+import { installRow } from '../pwa.js';
 
 // Layout de computador a partir de 960 px de largura.
 const wide = () => matchMedia('(min-width: 960px)').matches;
@@ -177,6 +178,7 @@ screen('config', {
       </form>
       <section class="sec"><div class="lbl">Aparência</div><div class="list">
         <div class="li static">${ic('moon')}<div class="li-t"><b>Tema escuro</b><span>O tema claro é o padrão da plataforma</span></div>${toggle('theme', isDark(), 'Tema escuro')}</div></div></section>
+      <section class="sec"><div class="lbl">Aplicativo</div><div class="list">${installRow()}</div></section>
       ${u.role === 'admin' ? '' : `<section class="sec"><div class="lbl">Avisos</div><div class="list">${notifyRow()}</div></section>`}
       ${u.role === 'patient' ? `<section class="sec"><div class="lbl">Plano</div><div class="list"><button class="li" data-a="tab" data-v="planos">${ic('crown')}<div class="li-t"><b>Meu plano</b><span>${u.plan === 'plus' ? 'Me Salva+ · R$ 19,90/mês' : 'Gratuito'}</span></div>${ic('chevR')}</button>
         <button class="li" data-a="tri">${ic('sparkle')}<div class="li-t"><b>Refazer triagem</b><span>Atualize suas necessidades e preferências</span></div>${ic('chevR')}</button></div></section>` : ''}
@@ -188,7 +190,7 @@ screen('config', {
         <button class="li" data-a="crise">${ic('lifebuoy')}<div class="li-t"><b>Ajuda imediata</b><span>CVV 188 · SAMU 192</span></div>${ic('chevR')}</button>
         <button class="li" data-a="logout">${ic('logout')}<div class="li-t"><b>Sair</b><span>Encerrar a sessão neste aparelho</span></div></button>
       </div></section>
-      <div class="small muted" style="text-align:center">Me Salva · versão 1.1 · projeto acadêmico</div>
+      <div class="small muted" style="text-align:center">Me Salva · versão ${esc(String(S.meta.version || '').replace(/\.0$/, ''))} · projeto acadêmico</div>
     </main>`;
   },
 });

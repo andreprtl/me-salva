@@ -6,6 +6,7 @@ import {
 } from '../core.js';
 import { wide } from './common.js';
 import { notifyInvite } from './notifications.js';
+import { installInvite } from '../pwa.js';
 
 // Filtros da busca (S.f), mantidos enquanto o paciente navega.
 const freshFilters = () => ({ area: null, q: '', modality: 'todos', max: 300, social: false, sort: 'rel' });
@@ -50,6 +51,7 @@ screen('home', {
             <div class="grow"><div class="eyebrow">Próxima sessão</div><b>${esc(nx.pro_name)}</b><div class="small muted">${when(nx.start)} · ${nx.modality === 'online' ? 'Online' : 'Presencial'}</div></div>
             ${nx.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${nx.id}">${ic('video')}Entrar</button>` : `<button class="btn btn-ghost btn-sm" data-a="tab" data-v="agenda">Ver</button>`}
           </section>` : `<section class="card next"><span class="s-ic">${ic('cal')}</span><div class="grow"><b>Nenhuma sessão marcada</b><div class="small muted">Faça a triagem ou busque um profissional.</div></div></section>`}
+          ${installInvite()}
           <button class="promo" data-a="short" data-v="social">${ic('sparkle')}<div><b>Vagas sociais a partir de R$ 40</b><span>Profissionais recém-formados, com supervisão clínica, abrem horários com valor acessível.</span></div></button>
           <button class="crisis only-m" data-a="crise">${ic('lifebuoy')}<div><b>Precisa de ajuda agora?</b><span>CVV: ligue 188, 24 horas, gratuito.</span></div></button>
           ${S.user.plan !== 'plus' ? `<button class="nudge only-d" data-a="tab" data-v="planos">${ic('crown')}<div class="grow"><b>Me Salva+</b> · 10% de desconto em todas as sessões por R$ 19,90/mês.</div>${ic('chevR')}</button>` : ''}

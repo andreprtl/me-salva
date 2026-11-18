@@ -6,13 +6,14 @@ import { nowSP } from '../time.js';
 import { quote } from '../pricing.js';
 import { freeSlots } from '../slots.js';
 import { deriveNeeds, rank } from '../matching.js';
+import { APP_VERSION } from '../config.js';
 import { AREAS, BAIRROS, BAIRRO_NAMES, TOPICS, AUDIENCES, PRICING, TRIAGE } from '../../public/js/shared/data.js';
 
 const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 export default function catalogRoutes(r, { db, config, svc }) {
   // Dados de referência para a interface: áreas, bairros, temas, preços e textos da triagem.
-  r.get('/api/meta', () => ({ areas: AREAS, bairros: BAIRROS, bairroNames: BAIRRO_NAMES, topics: TOPICS, audiences: AUDIENCES, pricing: PRICING, triage: TRIAGE, demoMode: config.demoMode }));
+  r.get('/api/meta', () => ({ areas: AREAS, bairros: BAIRROS, bairroNames: BAIRRO_NAMES, topics: TOPICS, audiences: AUDIENCES, pricing: PRICING, triage: TRIAGE, demoMode: config.demoMode, version: APP_VERSION }));
 
   // Resumo de um profissional para listas e mapa, com próximo horário e vaga social disponível.
   function summary(p, user, now) {

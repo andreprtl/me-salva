@@ -5,8 +5,8 @@ import {
   msgTime, when, setTheme, isDark, downloadBlob, copyText, $, bellBtn,
 } from '../core.js';
 import { onLive, startLive, stopLive, setCounts } from '../realtime.js';
-import { notifyRow } from './notifications.js';
-import { installRow } from '../pwa.js';
+import { notifyRow, notifyOn } from './notifications.js';
+import { installRow, dropPush, syncPush } from '../pwa.js';
 
 // Layout de computador a partir de 960 px de largura.
 const wide = () => matchMedia('(min-width: 960px)').matches;
@@ -46,12 +46,14 @@ screen('entrada', {
 });
 
 // Depois de entrar ou se cadastrar: guarda o usuário, abre o canal em tempo real e a tela inicial do perfil.
+// Com os avisos já permitidos neste aparelho, a inscrição do Web Push passa para a conta que entrou.
 async function afterLogin(user) {
   S.user = user;
   S.unread = user.unread || 0;
   S.notif = user.notifications || 0;
   startLive();
   tab(homeOf(user));
+  if (notifyOn()) syncPush();
 }
 // Entra com uma conta de demonstração (senha demo1234).
 A.demoLogin = (el) => run(async () => {
@@ -209,9 +211,10 @@ A.exportData = (el) => run(async () => {
 }, el);
 A.deleteAccount = () => confirmSheet({ title: 'Excluir sua conta?', text: 'Seus dados, mensagens e triagens serão apagados. Sessões futuras serão canceladas. Esta ação não pode ser desfeita.', input: 'Digite EXCLUIR para confirmar', ok: 'Excluir conta', danger: true }, async (v) => {
   await api('/api/me', { method: 'DELETE', body: { confirm: String(v || '').trim().toUpperCase() } });
-  stopLive(); S.user = null; closeLayer(); resetTo('entrada'); toast('Conta excluída.');
+  stopLive(); S.user = null; dropPush(); closeLayer(); resetTo('entrada'); toast('Conta excluída.');
 });
-A.logout = (el) => run(async () => { await api('/api/auth/logout', { method: 'POST' }); stopLive(); S.user = null; S.call = null; resetTo('entrada'); }, el);
+// Sair: antes, este aparelho para de receber os avisos da conta (Web Push), para outra pessoa no mesmo aparelho não vê-los.
+A.logout = (el) => run(async () => { await dropPush(); await api('/api/auth/logout', { method: 'POST' }); stopLive(); S.user = null; S.call = null; resetTo('entrada'); }, el);
 
 /* ================= ajuda imediata e menu do celular ================= */
 // Folha de ajuda imediata com telefones de emergência (CVV 188), acessível em todas as telas.

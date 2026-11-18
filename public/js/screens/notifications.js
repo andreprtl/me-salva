@@ -3,7 +3,7 @@
 // As notificações novas chegam pelo canal em tempo real (realtime.js, evento 'notification').
 import { S, A, LAYERS, SCREENS, api, run, go, tab, top, refresh, openLayer, closeLayer, renderLayer, toast, esc, ic, ago, toggle } from '../core.js';
 import { onLive, setCounts } from '../realtime.js';
-import { systemNotice } from '../pwa.js';
+import { systemNotice, syncPush, dropPush } from '../pwa.js';
 
 // Ícone de cada tipo de notificação.
 const KIND_ICON = { message: 'chat', confirmed: 'check', cancelled: 'x', reminder: 'clock', review: 'star', verified: 'verified', rejected: 'info' };
@@ -92,7 +92,7 @@ onLive('counts', () => {
 /* ---------------- avisos do sistema (notificação do navegador) ---------------- */
 export const canNotify = () => 'Notification' in window;
 // Preferência deste aparelho (a permissão do navegador não pode ser desfeita por código).
-const notifyOn = () => { try { return localStorage.getItem('ms-notify') !== 'off'; } catch { return true; } };
+export const notifyOn = () => { try { return localStorage.getItem('ms-notify') !== 'off'; } catch { return true; } };
 const remember = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
 const asked = () => { try { return localStorage.getItem('ms-notify-asked') === '1'; } catch { return false; } };
 
@@ -120,6 +120,7 @@ async function askNotify() {
   remember('ms-notify-asked', '1');
   remember('ms-notify', p === 'granted' ? 'on' : 'off');
   toast(p === 'granted' ? 'Pronto! Os avisos vão aparecer neste aparelho.' : 'Tudo bem. Você pode ativar depois em Configurações.');
+  if (p === 'granted') syncPush(); // v1.2: também com o app fechado (Web Push)
   return p;
 }
 
@@ -136,18 +137,19 @@ A.notifyLater = (el) => { remember('ms-notify-asked', '1'); el.closest('.np-invi
 
 // Linha "Avisos do navegador" nas Configurações.
 export function notifyRow() {
-  const head = (text) => `<div class="li static" id="notifyRow">${ic('bell')}<div class="li-t"><b>Avisos do navegador</b><span>${text}</span></div>`;
+  const head = (text) => `<div class="li static" id="notifyRow">${ic('bell')}<div class="li-t"><b>Avisos do aparelho</b><span>${text}</span></div>`;
   if (!canNotify()) return head('Este navegador não mostra avisos do sistema. As notificações continuam no sino.') + '</div>';
   if (Notification.permission === 'denied') return head('Bloqueados neste navegador. Para ativar, libere as notificações nas configurações do site.') + '</div>';
   const on = Notification.permission === 'granted' && notifyOn();
-  return head(on ? 'Ligados: lembretes e mensagens aparecem mesmo com o Me Salva em segundo plano' : 'Receba lembretes e mensagens mesmo com o Me Salva em segundo plano')
-    + toggle('notifyToggle', on, 'Avisos do navegador') + '</div>';
+  return head(on ? 'Ligados: lembretes e mensagens aparecem mesmo com o Me Salva fechado' : 'Receba lembretes e mensagens mesmo com o Me Salva fechado')
+    + toggle('notifyToggle', on, 'Avisos do aparelho') + '</div>';
 }
 A.notifyToggle = (el) => run(async () => {
   if (Notification.permission === 'default') await askNotify();
   else if (Notification.permission === 'granted') {
     const on = !notifyOn();
     remember('ms-notify', on ? 'on' : 'off');
+    if (on) syncPush(); else dropPush();
     toast(on ? 'Avisos ligados neste aparelho.' : 'Avisos desligados neste aparelho.');
   }
   const row = document.getElementById('notifyRow');

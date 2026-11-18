@@ -2,8 +2,8 @@
 // Desde a v1.2 também registra o service worker (app instalável) e atende os atalhos do app (/?tela=...).
 import { S, A, F, I, api, render, resetTo, tab, homeOf, top, closeLayer, openLayer, toast } from './core.js';
 import { startLive, setCounts } from './realtime.js';
-import { registerServiceWorker } from './pwa.js';
-import { openTarget } from './screens/notifications.js';
+import { registerServiceWorker, syncPush } from './pwa.js';
+import { openTarget, notifyOn } from './screens/notifications.js';
 import './screens/common.js';
 import './screens/patient.js';
 import './screens/pro.js';
@@ -72,7 +72,8 @@ async function boot() {
     S.notif = me.user?.notifications || 0;
     if (S.user) { startLive(); tab(homeOf(S.user)); } else resetTo('entrada');
     if (start) openStart(start);
-    registerServiceWorker();
+    // App instalável: service worker e, com os avisos ligados neste aparelho, a inscrição do Web Push.
+    registerServiceWorker().then(() => { if (S.user && notifyOn()) syncPush(); });
   } catch (e) {
     document.getElementById('screen').innerHTML = `<div class="loading"><div class="empty"><div>Não foi possível conectar ao servidor do Me Salva.</div><button class="btn btn-primary btn-sm" data-a="reload">Tentar de novo</button></div></div>`;
     toast(e.message, 'err');

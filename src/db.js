@@ -168,6 +168,16 @@ CREATE TABLE IF NOT EXISTS notifications(
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS notif_user ON notifications(user_id, read_at);
+-- v1.2: inscrições de Web Push, uma por aparelho e navegador. endpoint é o endereço no serviço de push do
+-- fabricante (Google, Mozilla, Apple ou Microsoft); p256dh e auth são as chaves do aparelho para criptografar o aviso.
+CREATE TABLE IF NOT EXISTS push_subscriptions(
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 -- v1.1: lembretes já enviados. A chave (sessão, tipo) impede enviar o mesmo lembrete duas vezes.
 CREATE TABLE IF NOT EXISTS reminders(
   appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,

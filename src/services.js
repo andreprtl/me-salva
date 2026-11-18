@@ -21,7 +21,8 @@ export function notificationView(n) {
 }
 
 // hub é o distribuidor de eventos em tempo real; sem ele (scripts e testes de regra), os eventos são ignorados.
-export function createServices(db, config, hub = { send() {} }) {
+// push é o Web Push (v1.2, src/push.js), que leva cada notificação aos aparelhos inscritos, mesmo com o app fechado.
+export function createServices(db, config, hub = { send() {} }, push = null) {
   // Reservas aguardando pagamento por mais de 15 minutos liberam o horário (também as sessões de um pacote
   // cujo PIX não foi pago: o pacote inteiro vence junto).
   function expirePending() {
@@ -147,6 +148,8 @@ export function createServices(db, config, hub = { send() {} }) {
       if (!row) return;
       hub.send(userId, 'notification', { notification: notificationView(row) });
       sendCounts(userId);
+      // Web Push: segue em segundo plano, sem atrasar a resposta de quem causou a notificação.
+      push?.sendTo(userId, notificationView(row)).catch((e) => console.warn('Web Push:', e.message));
     });
     return id;
   }

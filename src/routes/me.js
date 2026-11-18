@@ -60,6 +60,9 @@ export default function meRoutes(r, { db, svc, hub, notesKey }) {
       mensagens: db.all("SELECT id, patient_id, pro_id, sender_id, kind, body, created_at FROM messages WHERE patient_id = ? OR pro_id = ?", id, id),
       avaliacoes: db.all('SELECT pro_id, rating, tags, text, author_label, created_at FROM reviews WHERE patient_id = ?', id),
       notificacoes: db.all('SELECT kind, title, body, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY id', id),
+      // Aparelhos com avisos do sistema ligados (Web Push): só o serviço e a data, sem as chaves.
+      aparelhos_com_avisos: db.all('SELECT endpoint, created_at FROM push_subscriptions WHERE user_id = ? ORDER BY id', id)
+        .map((s) => ({ servico: new URL(s.endpoint).hostname, criado_em: s.created_at })),
       prontuario: req.user.role === 'pro'
         ? db.all('SELECT patient_id, iv, tag, data, created_at FROM notes WHERE pro_id = ?', id).map((n) => ({ patient_id: n.patient_id, created_at: n.created_at, texto: decrypt(notesKey, n) }))
         : undefined,

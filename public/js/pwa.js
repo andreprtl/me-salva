@@ -7,7 +7,7 @@
 //     botão "Instalar o app" abre a janela de instalação do próprio navegador.
 //   iPhone e iPad (Safari): não há esse evento; mostramos o passo a passo Compartilhar → Adicionar à Tela de Início.
 //   Outros navegadores: indicamos o menu do navegador.
-import { S, A, LAYERS, openLayer, toast, ic } from './core.js';
+import { S, A, LAYERS, api, openLayer, toast, ic } from './core.js';
 
 let deferredPrompt = null;   // evento guardado para abrir a janela de instalação depois, num clique
 let installedNow = false;    // o app acabou de ser instalado nesta visita
@@ -129,6 +129,49 @@ export async function systemNotice(n, onClickFallback) {
     sys.onclick = () => { window.focus(); sys.close(); onClickFallback?.(); };
     return true;
   } catch { return false; }
+}
+
+/* ---------------- Web Push: avisos com o app fechado ---------------- */
+// Com a permissão dada e os avisos ligados, o aparelho se inscreve no serviço de push do navegador e manda a
+// inscrição para o servidor (src/push.js), que passa a entregar as notificações mesmo com o app fechado.
+// No iPhone, isso só existe no app instalado (iOS 16.4 ou mais recente).
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && window.isSecureContext;
+// Chave pública em base64url → bytes, como o navegador espera em applicationServerKey.
+const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+const sameKey = (sub, key) => {
+  const k = sub.options?.applicationServerKey;
+  if (!k) return true; // navegador antigo: não informa a chave; o servidor confere
+  const a = new Uint8Array(k); const b = keyBytes(key);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+};
+// Garante a inscrição deste aparelho para quem está logado. Chamado ao abrir o app e ao ligar os avisos.
+export async function syncPush() {
+  try {
+    if (!S.user || !pushSupported() || Notification.permission !== 'granted') return false;
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api('/api/push/key');
+    let sub = await reg.pushManager.getSubscription();
+    // Chaves do servidor trocadas (por exemplo, servidor novo): a inscrição antiga não vale mais.
+    if (sub && !sameKey(sub, key)) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    const j = sub.toJSON();
+    await api('/api/push/subscribe', { method: 'POST', body: { endpoint: j.endpoint, keys: j.keys } });
+    return true;
+  } catch (e) {
+    console.warn('Avisos com o app fechado indisponíveis:', e.message);
+    return false;
+  }
+}
+// Desliga os avisos deste aparelho (ao sair da conta ou ao desligar em Configurações).
+export async function dropPush() {
+  try {
+    if (!pushSupported()) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return;
+    if (S.user) await api('/api/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe();
+  } catch { /* nada a desfazer */ }
 }
 
 /* ---------------- sem internet ---------------- */

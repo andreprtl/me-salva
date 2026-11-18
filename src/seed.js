@@ -89,7 +89,7 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
 
   db.tx(() => {
     if (reset) {
-      for (const t of ['notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'packages', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
+      for (const t of ['push_subscriptions', 'notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'packages', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
     }
     const user = (role, name, email, { bairro = 'Bela Vista', demo = 0, plan = 'free' } = {}) =>
       db.run('INSERT INTO users(role, name, email, pass_hash, bairro, is_demo, plan) VALUES (?, ?, ?, ?, ?, ?, ?)', role, name, email, pass, bairro, demo ? 1 : 0, plan).lastInsertRowid;

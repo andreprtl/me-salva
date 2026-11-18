@@ -77,7 +77,7 @@ onLive('notification', ({ notification: n }) => {
   const t = top();
   if (n.kind === 'message' && t?.n === 'chat' && String(t.p) === n.param && !document.hidden) return;
   // Quem acabou de pagar já está vendo a confirmação na tela.
-  if (n.kind === 'confirmed' && ['pagamento', 'pix', 'confirmado'].includes(t?.n) && !document.hidden) return;
+  if (n.kind === 'confirmed' && ['pagamento', 'pix', 'confirmado', 'pixpacote', 'pacote'].includes(t?.n) && !document.hidden) return;
   if (document.hidden) systemNotify(n);
   else if (S.layer?.type !== 'notifs') toast(`${n.title}: ${n.body}`);
 });

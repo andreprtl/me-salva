@@ -197,7 +197,7 @@ LAYERS.processing = (l) => `<div class="scrim"></div><div class="center-load"><d
 LAYERS.confirm = (l) => `<div class="scrim" data-a="close"></div><div class="sheet" role="dialog" aria-label="${esc(l.title)}">
   <div class="h2">${esc(l.title)}</div><p class="muted" style="margin:0">${esc(l.text)}</p>
   ${l.input ? `<div class="field"><label for="confirmIn">${esc(l.input)}</label><input class="input" id="confirmIn" autocomplete="off" autofocus></div>` : ''}
-  <div class="grid2"><button class="btn btn-ghost" data-a="close">Voltar</button><button class="btn ${l.danger ? 'btn-primary' : 'btn-primary'}" data-a="confirmOk" style="${l.danger ? 'background:var(--danger);color:#fff' : ''}">${esc(l.ok || 'Confirmar')}</button></div></div>`;
+  <div class="grid2"><button class="btn btn-ghost" data-a="close">Voltar</button><button class="btn ${l.danger ? 'btn-danger' : 'btn-primary'}" data-a="confirmOk">${esc(l.ok || 'Confirmar')}</button></div></div>`;
 let confirmFn = null;
 // Pede confirmação antes de uma ação; fn recebe o texto digitado, quando há campo.
 export function confirmSheet(opts, fn) { confirmFn = fn; openLayer('confirm', opts); }
@@ -246,6 +246,12 @@ export function dayLabel(day) {
   return `${DOW[weekdayOf(day)]}, ${d} ${MES[m - 1]}`;
 }
 export const when = (start) => `${dayLabel(start.slice(0, 10))}, ${start.slice(11, 16)}`;
+// Minutos de um horário 'AAAA-MM-DDTHH:MM' (só para comparar e subtrair, como toMinutes em src/time.js).
+export const minutesOf = (stamp) => { const [y, m, d] = dayParts(stamp.slice(0, 10)); return Date.UTC(y, m - 1, d, Number(stamp.slice(11, 13)), Number(stamp.slice(14, 16))) / 60000; };
+// Horas que faltam até um horário (negativo se já passou).
+export const hoursUntil = (stamp) => (minutesOf(stamp) - minutesOf(nowSP())) / 60;
+// 'AAAA-MM-DD…' → 'DD/MM'.
+export const dm = (stamp) => `${stamp.slice(8, 10)}/${stamp.slice(5, 7)}`;
 // Tempo desde um instante ISO: 'agora', 'há 5 min', 'há 2 h', 'ontem' ou a data.
 export function ago(iso) {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -346,6 +352,14 @@ export const wordmark = (s = 54) => `<div class="logo-lock">${logoMark(s * 1.45)
 export const avatar = (name, color = '#2F7D69', s = 48) => `<span class="av" style="width:${s}px;height:${s}px;background:${esc(color)};font-size:${Math.round(s * 0.36)}px">${esc(initials(name))}</span>`;
 // Cinco estrelas preenchidas conforme a nota arredondada.
 export function stars(n) { let h = ''; for (let i = 1; i <= 5; i++) h += ic('star', 'fill' + (i <= Math.round(n) ? '' : ' off')); return `<span class="stars" aria-label="${nota(n)} de 5">${h}</span>`; }
+// Desenho de QR Code ilustrativo; o código copia e cola ao lado é o que segue o padrão PIX.
+export function qrSvg(seed) {
+  const n = 25; let r = '';
+  const h = (s) => { let x = 2166136261; for (const c of s) { x ^= c.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
+  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="var(--qr)"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="var(--qr-bg)"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="var(--qr)"/>`;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { if ((x < 8 && y < 8) || (x > 16 && y < 8) || (x < 8 && y > 16)) continue; if (h(seed + ':' + x + ',' + y) % 2) r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }
+  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="QR Code ilustrativo"><g fill="var(--qr)">${r}</g>${finder(0, 0)}${finder(18, 0)}${finder(0, 18)}</svg>`;
+}
 export const backBtn = () => `<button class="icon-btn" data-a="back" aria-label="Voltar">${ic('chevL')}</button>`;
 export const areaName = (id) => S.meta?.areas.find((a) => a.id === id)?.nome || 'Todos os profissionais';
 export const chipCheck = (name, value, label, checked) => `<label class="chip-check"><input type="checkbox" name="${esc(name)}" value="${esc(value)}" ${checked ? 'checked' : ''}><span>${esc(label)}</span></label>`;

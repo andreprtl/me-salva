@@ -1,7 +1,8 @@
 // Gera os ícones e as telas de abertura do app instalável (PWA) a partir do logo do Me Salva.
 // Uso (só para quem for mudar o logo): `node scripts/icones.mjs`. Precisa do rsvg-convert
 // (pacote librsvg2-bin no Linux ou `brew install librsvg` no Mac). O app em si não depende disto:
-// os arquivos gerados ficam em public/icons/ e vão para o Git.
+// os arquivos gerados ficam em public/icons/ e vão para o Git. Os PNGs do repositório foram depois reduzidos
+// para uma paleta de cores (opcional; qualquer otimizador de PNG serve, como o pngquant).
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';

@@ -106,6 +106,12 @@ screen('pacote', {
 });
 
 /* ================= cancelamento ================= */
+// Recarrega a tela depois de um cancelamento. Na tela do pacote, o "Pacote agendado!" não aparece de novo.
+function reload() {
+  const t = top();
+  if (t.n === 'pacote' && typeof t.p === 'object') t.p = t.p.id;
+  refresh();
+}
 // Cancelar uma sessão de pacote: "só esta" ou "esta e as próximas". n e range descrevem as próximas.
 export function openPackCancel(id, n, range) { openLayer('packCancel', { id, n, range }); }
 LAYERS.packCancel = (l) => `<div class="scrim" data-a="close"></div><div class="sheet" role="dialog" aria-label="Cancelar sessão do pacote">
@@ -126,7 +132,7 @@ A.packCancelGo = (el) => run(async () => {
   const r = await api(`/api/appointments/${S.layer.id}/cancel`, { method: 'POST', body: { following } });
   closeLayer();
   toast(r.cancelled > 1 ? `${r.cancelled} sessões canceladas.` : 'Sessão cancelada.');
-  refresh();
+  reload();
 }, el);
 // "Cancelar as próximas", no resumo do pacote.
 A.packCancelRest = (el) => confirmSheet({
@@ -135,7 +141,7 @@ A.packCancelRest = (el) => confirmSheet({
   ok: 'Cancelar sessões', danger: true,
 }, async () => {
   const r = await api(`/api/appointments/${el.dataset.v}/cancel`, { method: 'POST', body: { following: true } });
-  closeLayer(); toast(`${r.cancelled} sessões canceladas.`); refresh();
+  closeLayer(); toast(`${r.cancelled} sessões canceladas.`); reload();
 });
 
 /* ================= agenda ================= */

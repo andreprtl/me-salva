@@ -60,6 +60,8 @@ export default function meRoutes(r, { db, svc, hub, notesKey }) {
       mensagens: db.all("SELECT id, patient_id, pro_id, sender_id, kind, body, created_at FROM messages WHERE patient_id = ? OR pro_id = ?", id, id),
       avaliacoes: db.all('SELECT pro_id, rating, tags, text, author_label, created_at FROM reviews WHERE patient_id = ?', id),
       notificacoes: db.all('SELECT kind, title, body, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY id', id),
+      // Eventos do funil (v1.3): só o tipo e o horário de cada passo, usados nas métricas da plataforma.
+      eventos_de_uso: db.all('SELECT kind, at FROM events WHERE user_id = ? ORDER BY id', id),
       // Aparelhos com avisos do sistema ligados (Web Push): só o serviço e a data, sem as chaves.
       aparelhos_com_avisos: db.all('SELECT endpoint, created_at FROM push_subscriptions WHERE user_id = ? ORDER BY id', id)
         .map((s) => ({ servico: new URL(s.endpoint).hostname, criado_em: s.created_at })),

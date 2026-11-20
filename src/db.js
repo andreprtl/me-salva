@@ -185,6 +185,19 @@ CREATE TABLE IF NOT EXISTS reminders(
   sent_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   PRIMARY KEY(appointment_id, kind)
 );
+-- v1.3: eventos do funil, para o painel de métricas da administração. Guardam só o tipo, o horário e
+-- identificadores internos: nada de nome, respostas da triagem, mensagens ou valores. Se a conta for
+-- excluída, user_id vira nulo e o evento continua contando só nos totais.
+CREATE TABLE IF NOT EXISTS events(
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('triage_started','triage_done','profile_view','booking_created','payment_confirmed','session_done','review_sent')),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  pro_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ref_id INTEGER,                      -- sessão (ou pacote, em booking_created e payment_confirmed) ligada ao evento
+  at TEXT NOT NULL                     -- horário de São Paulo, 'AAAA-MM-DDTHH:MM'
+);
+CREATE INDEX IF NOT EXISTS events_kind_at ON events(kind, at);
+CREATE INDEX IF NOT EXISTS events_user ON events(user_id, at);
 `;
 
 // Colunas acrescentadas depois da primeira versão. CREATE TABLE IF NOT EXISTS não mexe numa tabela que já

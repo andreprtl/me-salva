@@ -23,6 +23,7 @@ import realtimeRoutes from './routes/realtime.js';
 import notificationRoutes from './routes/notifications.js';
 import packageRoutes from './routes/packages.js';
 import pushRoutes from './routes/push.js';
+import metricsRoutes from './routes/metrics.js';
 
 // Content Security Policy: só scripts do próprio site (nenhum script inline), fontes do Google Fonts
 // e imagens e áudios locais. Limita o estrago de uma eventual injeção de HTML.
@@ -45,7 +46,7 @@ export function createApp({ db, config, notesKey, push = createPush({ db, config
   const reminders = createReminders({ db, svc });
   const ctx = { db, config, svc, notesKey, hub, reminders, push };
   // Cada arquivo em routes/ registra suas rotas no roteador e recebe o contexto compartilhado (ctx).
-  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes, packageRoutes, pushRoutes]) mount(router, ctx);
+  for (const mount of [authRoutes, meRoutes, catalogRoutes, appointmentRoutes, messageRoutes, proRoutes, adminRoutes, realtimeRoutes, notificationRoutes, packageRoutes, pushRoutes, metricsRoutes]) mount(router, ctx);
   const publicDir = fileURLToPath(new URL('../public', import.meta.url));
   const sw = createServiceWorker({ publicDir, appVersion: APP_VERSION });
 

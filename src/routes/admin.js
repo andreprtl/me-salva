@@ -23,7 +23,8 @@ export default function adminRoutes(r, { db, config, svc, hub, reminders, notesK
       social_month: one("SELECT COUNT(*) n FROM appointments WHERE status IN ('confirmed','done') AND social = 1 AND substr(start,1,7) = ?", month),
       gmv_month: one("SELECT COALESCE(SUM(amount),0) n FROM payments WHERE status = 'paid' AND kind = 'session' AND substr(paid_at,1,7) = ?", month),
       revenue_month: one("SELECT COALESCE(SUM(fee),0) n FROM payments WHERE status = 'paid' AND substr(paid_at,1,7) = ?", month),
-      triages_total: one('SELECT COUNT(*) n FROM triages'),
+      // Triagens concluídas (eventos do funil, v1.3); o seed não guarda as respostas das triagens fictícias.
+      triages_total: one("SELECT COUNT(*) n FROM events WHERE kind = 'triage_done'"),
       pending: svc.listPros("p.status = 'pending'").map((p) => ({ id: p.id, name: p.name, title: p.title, reg: p.reg, area: p.area, bairro: p.bairro, is_new: p.is_new, supervisor: p.supervisor })),
       demo_mode: config.demoMode,
     };

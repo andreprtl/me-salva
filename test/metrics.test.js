@@ -32,6 +32,10 @@ function smallDb() {
   for (const wd of [1, 3]) db.run("INSERT INTO availability(pro_id, weekday, hour) VALUES (?, ?, '08:00')", B, wd);
   db.run("INSERT INTO pros(user_id, area, title, reg, approach, approach_short, price, status) VALUES (?, 'psicologo', 'Psicólogo', 'CRP 1', 'TCC', 'TCC', 8000, 'pending')", user('pro', 'pendente'));
   const [P1, P2, P3, P4] = [user('patient', 'p1', 'plus'), user('patient', 'p2'), user('patient', 'p3'), user('patient', 'p4')];
+  // Cadastros: P1 em 25/10 (22:30 em São Paulo = 01:30 UTC do dia seguinte), P2 e P3 em 03/11; P4 na semana atual.
+  db.run("UPDATE users SET created_at = '2026-10-26T01:30:00Z' WHERE id = ?", P1);
+  for (const id of [P2, P3]) db.run("UPDATE users SET created_at = '2026-11-03T13:00:00Z' WHERE id = ?", id);
+  db.run("UPDATE users SET created_at = '2026-11-17T13:00:00Z' WHERE id = ?", P4);
   const pkg = db.run("INSERT INTO packages(patient_id, pro_id, weekdays, time, weeks, modality, amount, status) VALUES (?, ?, '[1,3]', '08:00', 4, 'online', 5000, 'paid')", P2, B).lastInsertRowid;
   const appt = (patient, proId, start, status, { amount, fee, social = 0, base = amount, package_id = null }) => db.run(
     `INSERT INTO appointments(patient_id, pro_id, package_id, start, modality, social, base_price, amount, fee, pro_amount, status)
@@ -109,10 +113,10 @@ test('métricas: retenção, vagas sociais, qualidade e semanas', () => {
   assert.equal(m.weekly.at(-1).week, '2026-11-09');
   assert.equal(m.weekly[0].week, '2026-05-18');
   const w = Object.fromEntries(m.weekly.map((x) => [x.week, x]));
-  assert.deepEqual(w['2026-11-09'], { week: '2026-11-09', sessions: 1, social: 0, no_show: 1, gmv: 9000, revenue: 200, new_patients: 0 });
-  assert.deepEqual(w['2026-11-02'], { week: '2026-11-02', sessions: 1, social: 0, no_show: 0, gmv: 11990, revenue: 3190, new_patients: 1 });
-  assert.equal(w['2026-09-28'].new_patients, 1);
-  assert.equal(m.weekly.reduce((t, x) => t + x.new_patients, 0), 2, 'P2 começou na semana atual');
+  assert.deepEqual(w['2026-11-09'], { week: '2026-11-09', sessions: 1, social: 0, no_show: 1, gmv: 9000, revenue: 200, signups: 0 });
+  assert.deepEqual(w['2026-11-02'], { week: '2026-11-02', sessions: 1, social: 0, no_show: 0, gmv: 11990, revenue: 3190, signups: 2 });
+  assert.equal(w['2026-10-19'].signups, 1, 'cadastro de domingo à noite em São Paulo fica na semana de domingo');
+  assert.equal(m.weekly.reduce((t, x) => t + x.signups, 0), 3, 'P4 se cadastrou na semana atual');
 });
 
 test('métricas: CSV em português (separador ;, vírgula decimal, BOM) e aviso de dados de demonstração', () => {
@@ -236,4 +240,35 @@ test('painel de métricas: só a administração, períodos válidos e CSV para 
   assert.match(csv.type, /^text\/csv/);
   assert.match(csv.disposition, /attachment; filename="me-salva-metricas-90d-\d{4}-\d{2}-\d{2}\.csv"/);
   assert.match(csv.data, /Funil \(quem começou a triagem no período\)/);
+});
+
+test('dados de demonstração: números coerentes com as hipóteses do contexto, e "Restaurar" recria tudo', () => {
+  const sdb = openDb(':memory:');
+  seedDemo(sdb, {});
+  const m = computeMetrics(sdb, { days: 30 });
+  const k = m.kpis;
+  // Hipóteses do PIPE: sessão média perto de R$ 95 e cerca de 8% dos pacientes no Me Salva+.
+  assert.ok(k.ticket >= 9000 && k.ticket <= 10500, `ticket médio de R$ ${k.ticket / 100}`);
+  assert.ok(k.plus_pct >= 5 && k.plus_pct <= 12, `${k.plus_pct}% dos pacientes ativos no Me Salva+`);
+  // Crescimento moderado: as 4 últimas semanas têm entre 1,2 e 2,2 vezes as sessões das 4 primeiras.
+  const avg = (list) => list.reduce((s, x) => s + x, 0) / list.length;
+  const w = m.weekly.map((x) => x.sessions);
+  const growth = avg(w.slice(-4)) / avg(w.slice(0, 4));
+  assert.ok(growth >= 1.2 && growth <= 2.2, `crescimento de ${growth.toFixed(2)}x`);
+  assert.ok(w.every((n) => n > 0), 'nenhuma semana vazia');
+  // Funil plausível: começa com gente, nunca cresce de um passo para o outro e nenhum passo perde mais de 60%.
+  assert.ok(m.funnel[0].users >= 15);
+  assert.ok(m.funnel.every((f, i) => !i || (f.users <= m.funnel[i - 1].users && f.of_prev >= 40)), JSON.stringify(m.funnel));
+  assert.ok(m.retention.two_plus_pct >= 50 && m.retention.package >= 1, JSON.stringify(m.retention));
+  assert.ok(m.social.occupancy_pct >= 50 && m.social.sessions > 0, JSON.stringify(m.social));
+  assert.ok(m.quality.no_show_pct <= 8 && m.quality.avg >= 4.5, JSON.stringify(m.quality));
+  // "Restaurar dados de demonstração" recria as cenas da v1.1 (notificações), da v1.2 (pacote) e da v1.3 (métricas).
+  sdb.run("DELETE FROM events");
+  seedDemo(sdb, { reset: true });
+  const mid = sdb.get("SELECT id FROM users WHERE email = 'mariana@demo.mesalva.app'").id;
+  assert.ok(sdb.get('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL', mid).n >= 1);
+  assert.equal(sdb.get("SELECT COUNT(*) n FROM packages WHERE patient_id = ? AND status = 'paid'", mid).n, 1);
+  const again = computeMetrics(sdb, { days: 30 }).kpis;
+  assert.ok(sdb.get('SELECT COUNT(*) n FROM events').n > 1000);
+  assert.ok(Math.abs(again.sessions - k.sessions) <= 2 && again.plus_subscribers === k.plus_subscribers, 'os mesmos números depois de restaurar');
 });

@@ -14,6 +14,7 @@
 //   retenção               entre os pacientes ativos: quantos fizeram 2 ou mais sessões e quantos têm pacote recorrente
 //   vagas sociais          ocupação dos horários fixos de vaga social que já passaram e sessões a preço social
 //   qualidade              avaliações enviadas no período e faltas ÷ (sessões realizadas + faltas)
+//   novos cadastros        contas de paciente criadas na semana (gráfico semanal)
 import { nowSP, addDays, weekday, weekStart, toMinutes, fromMinutes } from './time.js';
 import { socialKeys, offersSocial } from './slots.js';
 
@@ -158,14 +159,14 @@ export function quality(db, a, b) {
 
 /**
  * Séries semanais das últimas WEEKS semanas completas: sessões realizadas (e quantas a preço social), faltas,
- * valor transacionado, receita e novos pacientes (primeira sessão realizada naquela semana).
+ * valor transacionado, receita e novos cadastros de pacientes.
  */
 export function weekly(db, now, weeks = WEEKS) {
   const end = weekStart(now.slice(0, 10)); // segunda-feira da semana atual (fica de fora)
   const first = addDays(end, -7 * weeks);
   const list = Array.from({ length: weeks }, (_, i) => {
     const week = addDays(first, 7 * i);
-    return { week, sessions: 0, social: 0, no_show: 0, gmv: 0, revenue: 0, new_patients: 0 };
+    return { week, sessions: 0, social: 0, no_show: 0, gmv: 0, revenue: 0, signups: 0 };
   });
   const at = (stamp) => Math.floor((toMinutes(stamp.slice(0, 10)) - toMinutes(first)) / (7 * 24 * 60));
   for (const r of sessionsIn(db, `${first}T00:00`, `${end}T00:00`)) {
@@ -177,8 +178,9 @@ export function weekly(db, now, weeks = WEEKS) {
     const w = list[at(spOf(p.paid_at))];
     w.gmv += p.amount; w.revenue += p.fee;
   }
-  for (const r of db.all("SELECT MIN(start) AS first FROM appointments WHERE status = 'done' AND patient_id IS NOT NULL GROUP BY patient_id")) {
-    if (r.first >= `${first}T00:00` && r.first < `${end}T00:00`) list[at(r.first)].new_patients += 1;
+  for (const u of db.all("SELECT created_at FROM users WHERE role = 'patient'")) {
+    const t = spOf(u.created_at);
+    if (t >= `${first}T00:00` && t < `${end}T00:00`) list[at(t)].signups += 1;
   }
   return list;
 }
@@ -244,8 +246,8 @@ export function metricsCsv(m) {
     ['Funil (quem começou a triagem no período)', 'Pessoas', 'Do passo anterior (%)', 'Do início (%)'],
     ...m.funnel.map((f) => [f.label, f.users, f.of_prev, f.of_first]),
     [],
-    ['Semana (início)', 'Sessões realizadas', 'A preço social', 'Faltas', 'Valor transacionado (R$)', 'Receita da plataforma (R$)', 'Novos pacientes'],
-    ...m.weekly.map((w) => [br(w.week), w.sessions, w.social, w.no_show, reais(w.gmv), reais(w.revenue), w.new_patients]),
+    ['Semana (início)', 'Sessões realizadas', 'A preço social', 'Faltas', 'Valor transacionado (R$)', 'Receita da plataforma (R$)', 'Novos cadastros de pacientes'],
+    ...m.weekly.map((w) => [br(w.week), w.sessions, w.social, w.no_show, reais(w.gmv), reais(w.revenue), w.signups]),
   ];
   return '﻿' + lines.map((l) => l.map(cell).join(';')).join('\r\n') + '\r\n';
 }

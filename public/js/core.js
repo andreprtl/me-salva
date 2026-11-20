@@ -132,7 +132,7 @@ const parseParam = (v) => (/^\d+$/.test(v) ? Number(v) : v);
 const NAV = {
   patient: [['home', 'home', 'Início', 'Início'], ['areas', 'search', 'Buscar profissionais', 'Buscar'], ['agenda', 'cal', 'Minha agenda', 'Agenda'], ['chats', 'chat', 'Mensagens', 'Mensagens'], ['planos', 'crown', 'Planos', null], ['config', 'sliders', 'Configurações', 'Config.']],
   pro: [['painel', 'chart', 'Painel', 'Painel'], ['proagenda', 'cal', 'Agenda', 'Agenda'], ['horarios', 'clock', 'Horários e vagas sociais', 'Horários'], ['chats', 'chat', 'Mensagens', 'Mensagens'], ['properfil', 'user', 'Meu perfil', null], ['config', 'sliders', 'Configurações', 'Config.']],
-  admin: [['admin', 'shield', 'Administração', 'Admin'], ['config', 'sliders', 'Configurações', 'Config.']],
+  admin: [['admin', 'shield', 'Administração', 'Admin'], ['metricas', 'chart', 'Métricas do negócio', 'Métricas'], ['config', 'sliders', 'Configurações', 'Config.']],
 };
 // Desenha a barra lateral (computador) e as abas inferiores (celular) conforme o perfil.
 function paintShell(t, def) {

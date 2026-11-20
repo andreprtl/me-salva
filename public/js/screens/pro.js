@@ -228,9 +228,10 @@ screen('admin', {
     <section class="stats">
       <div class="stat"><span>Pacientes cadastrados</span><b>${d.patients}</b><em>${d.plus_subscribers} assinam o Me Salva+</em></div>
       <div class="stat"><span>Profissionais verificados</span><b>${d.pros_verified}</b><em>${d.pending.length} aguardando</em></div>
-      <div class="stat"><span>Sessões no mês</span><b>${d.sessions_month}</b><em>${d.social_month} vagas sociais</em></div>
-      <div class="stat"><span>Receita da plataforma (mês)</span><b>${brl(Math.round(d.revenue_month / 100) * 100)}</b><em>sobre ${brl(Math.round(d.gmv_month / 100) * 100)} em sessões</em></div>
+      <div class="stat"><span>Sessões realizadas no mês</span><b>${d.sessions_month}</b><em>${d.social_month} a preço social</em></div>
+      <div class="stat"><span>Receita da plataforma (mês)</span><b>${brl(Math.round(d.revenue_month / 100) * 100)}</b><em>sobre ${brl(Math.round(d.gmv_month / 100) * 100)} transacionados</em></div>
     </section>
+    <button class="card m-link" data-a="tab" data-v="metricas">${ic('chart')}<div class="grow"><b>Métricas do negócio</b><span class="small muted">Funil, receita, retenção, vagas sociais e qualidade, com gráficos semanais e exportação em CSV.</span></div>${ic('chevR')}</button>
     <section class="sec"><div class="sec-h"><h2 class="h2">Verificação de registros</h2><a class="link" href="https://cadastro.cfp.org.br/" target="_blank" rel="noopener">Consultar cadastro do CFP ${ic('external')}</a></div>
       ${d.pending.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Profissional</th><th>Registro</th><th>Área</th><th>Supervisão</th><th></th></tr></thead><tbody>
         ${d.pending.map((p) => `<tr><td><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.bairro)}</div></td><td>${esc(p.reg)}</td><td>${esc(S.meta.areas.find((a) => a.id === p.area)?.nome || p.area)}</td><td class="small">${p.is_new ? esc(p.supervisor) : '—'}</td>

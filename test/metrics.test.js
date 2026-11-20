@@ -46,6 +46,7 @@ function smallDb() {
   appt(P3, A, '2026-11-11T10:00', 'no_show', { amount: 10000, fee: 1200 });
   appt(P3, A, '2026-11-12T10:00', 'cancelled', { amount: 10000, fee: 1200 }); // cancelada: não conta
   appt(P3, A, '2026-10-01T10:00', 'done', { amount: 10000, fee: 1200 }); // período anterior
+  appt(P3, A, '2026-09-15T10:00', 'done', { amount: 10000, fee: 1200 }); // antes dos dois períodos: só mostra que há histórico
   appt(P1, A, '2026-11-23T10:00', 'confirmed', { amount: 10000, fee: 1200 }); // futura: não conta
   for (const [paid, uid] of [['2026-11-05T15:00:00Z', P1], ['2026-10-05T15:00:00Z', P1]]) {
     db.run("INSERT INTO payments(user_id, kind, method, amount, fee, status, paid_at) VALUES (?, 'plus', 'card', 1990, 1990, 'paid', ?)", uid, paid);
@@ -92,6 +93,8 @@ test('métricas: receita, valor transacionado, ticket e ativos do período (dado
   assert.equal(m.prev.sessions, 1);
   assert.equal(m.prev.gmv, 11990);
   assert.equal(m.prev.revenue, 3190);
+  // Sem sessões desde o começo do período anterior (aqui, 180 dias), não há comparação.
+  assert.equal(computeMetrics(smallDb(), { now: NOW, days: 180 }).prev, null);
 });
 
 test('métricas: funil por coorte, na ordem dos passos, com a conversão de cada passo', () => {

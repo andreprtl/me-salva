@@ -705,3 +705,52 @@ table.tbl{border-collapse:collapse;width:100%;min-width:560px;font-size:13px}
 .tag .ic{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
 .tag-btn{border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:500}
 .tag-btn:hover{filter:brightness(.97);text-decoration:underline}
+
+/* ---------- painel de métricas (v1.3) ---------- */
+/* Cores das séries dos gráficos, conferidas para daltonismo e contraste em cada tema (claro e escuro). */
+:root{--chart-1:#13998A;--chart-2:#6E4FCB}
+:root.dark{--chart-1:#2AA894;--chart-2:#9479E8}
+.m-filter{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:12px;flex:none}
+.m-filter .seg{flex:0 1 320px}
+.m-stats .stat em.neg{color:var(--muted)}
+.m-stats .stat em.flat{color:var(--muted);font-weight:500}
+.m-note{margin:0}
+.m-grid{display:grid;gap:16px}
+@media (min-width:960px){.m-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+.m-legend{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.m-legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.sw.c1{background:var(--chart-1)}
+.sw.c2{background:var(--chart-2)}
+.m-chart{min-height:190px}
+.m-chart-sm{min-height:150px}
+.m-plot{position:relative;border-radius:10px;touch-action:pan-y}
+.m-plot:focus-visible{outline:2.5px solid var(--teal);outline-offset:4px}
+.m-plot svg{display:block;overflow:visible}
+.m-plot .grid{stroke:var(--line);stroke-width:1}
+.m-plot .ax{fill:var(--muted);font-size:11px;font-family:var(--f-body);font-variant-numeric:tabular-nums}
+.m-plot .mk.c1{fill:var(--chart-1)}
+.m-plot .mk.c2{fill:var(--chart-2)}
+.m-plot .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.m-plot .ln.c1{stroke:var(--chart-1)}
+.m-plot .area.c1{fill:var(--chart-1);opacity:.12}
+.m-plot .hl{fill:var(--surface-2)}
+.m-plot .cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.m-plot .dot{fill:var(--chart-1);stroke:var(--surface);stroke-width:2}
+.m-tip{position:absolute;top:-4px;transform:translateY(-100%);pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:10px;padding:7px 10px;font-size:12px;display:flex;flex-direction:column;gap:1px;white-space:nowrap;z-index:2}
+.m-tip b{font-weight:600}
+.m-tip span{color:var(--muted)}
+.funnel{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.funnel li,.meter{display:flex;flex-direction:column;gap:4px}
+.fn-t{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+.fn-t b{font-family:var(--f-display);font-weight:800;font-size:16px}
+.fn-bar{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden}
+.fn-bar i{display:block;height:100%;border-radius:5px;background:var(--chart-1)}
+.fn-bar.lav i{background:var(--chart-2)}
+.m-table summary{cursor:pointer}
+.m-table[open] summary{margin-bottom:12px}
+.m-table .tbl-wrap{border:0}
+.m-link{display:flex;align-items:center;gap:12px;text-align:left;cursor:pointer;color:var(--ink);font:inherit}
+.m-link>.ic:first-child{color:var(--teal)}
+.m-link b{display:block}
+.m-link:hover{border-color:var(--teal)}

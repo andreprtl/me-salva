@@ -309,11 +309,11 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
       ev('profile_view', id, ids[plan.key], null, later(at, 8));
       plans.push({ id, ...plan, booked: later(at, 12), paid: true });
     }
-    // Novos cadastros por semana: de cerca de 6 no começo a cerca de 11 agora.
+    // Novos cadastros por semana: de cerca de 6 no começo a cerca de 13 agora.
     let serial = 0;
     for (let w = 0; w <= HIST_WEEKS; w++) {
       const t = w / HIST_WEEKS;
-      const n = Math.max(2, Math.round(6 + 5 * t + (rand() - 0.5) * 4));
+      const n = Math.max(2, Math.round(6 + 7 * t + (rand() - 0.5) * 4));
       for (let i = 0; i < n; i++) {
         const day = addDays(histStart, 7 * w + between(0, 6));
         const at = `${day}T${String(between(7, 22)).padStart(2, '0')}:${String(between(0, 59)).padStart(2, '0')}`;

@@ -8,7 +8,7 @@ import { systemNotice, syncPush, dropPush } from '../pwa.js';
 // Ícone de cada tipo de notificação.
 const KIND_ICON = { message: 'chat', confirmed: 'check', cancelled: 'x', reminder: 'clock', review: 'star', verified: 'verified', rejected: 'info' };
 // Telas do menu: abrem com tab() (recomeçam a navegação); as demais abrem por cima com go().
-const TAB_SCREENS = new Set(['home', 'areas', 'agenda', 'chats', 'planos', 'config', 'painel', 'proagenda', 'horarios', 'properfil', 'admin']);
+const TAB_SCREENS = new Set(['home', 'areas', 'agenda', 'chats', 'planos', 'config', 'painel', 'proagenda', 'horarios', 'properfil', 'admin', 'metricas']);
 
 /* ---------------- painel ---------------- */
 A.notifs = () => { openLayer('notifs', { items: null }); loadList(); };

@@ -190,6 +190,8 @@ export function computeMetrics(db, { now = nowSP(), days = 30 } = {}) {
   const r = periodRange(now, days);
   const cur = kpis(db, r.from, r.to);
   const plusSubscribers = db.get("SELECT COUNT(*) n FROM users WHERE role = 'patient' AND plan = 'plus'").n;
+  // Só compara com o período anterior se já havia sessões desde o começo dele (senão a variação seria enganosa).
+  const firstData = db.get("SELECT MIN(start) AS s FROM appointments WHERE status IN ('done','no_show')").s;
   return {
     now,
     period: { days, label: PERIODS[days] || `${days} dias`, from: r.from.slice(0, 10), to: now.slice(0, 10), prev_from: r.prevFrom.slice(0, 10) },
@@ -200,7 +202,7 @@ export function computeMetrics(db, { now = nowSP(), days = 30 } = {}) {
       plus_subscribers: plusSubscribers,
       plus_pct: pct(plusSubscribers, cur.patients_active),
     },
-    prev: kpis(db, r.prevFrom, r.prevTo),
+    prev: firstData && firstData <= r.prevFrom ? kpis(db, r.prevFrom, r.prevTo) : null,
     funnel: funnel(db, r.from, r.to),
     retention: retention(db, r.from, r.to),
     social: socialStats(db, r.from, r.to),
@@ -211,13 +213,13 @@ export function computeMetrics(db, { now = nowSP(), days = 30 } = {}) {
 
 /* ---------------- exportação em CSV ---------------- */
 // Planilha em português do Brasil: separador ';', vírgula decimal, valores em reais e BOM para o Excel reconhecer o UTF-8.
-const reais = (c) => (c / 100).toFixed(2).replace('.', ',');
+const reais = (c) => (c == null ? '' : (c / 100).toFixed(2).replace('.', ','));
 const br = (day) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
 const cell = (v) => (/[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 
 /** Monta o CSV do painel: indicadores do período (com o período anterior), funil e as semanas. */
 export function metricsCsv(m) {
-  const k = m.kpis; const p = m.prev;
+  const k = m.kpis; const p = m.prev || {}; // sem período anterior comparável, a coluna fica vazia
   const lines = [
     ['Me Salva - métricas do negócio (DADOS DE DEMONSTRAÇÃO, fictícios)'],
     ['Período', `últimos ${m.period.label} (${br(m.period.from)} a ${br(m.period.to)})`],
@@ -228,13 +230,13 @@ export function metricsCsv(m) {
     ['Receita da plataforma (R$)', reais(k.revenue), reais(p.revenue)],
     ['  das sessões (12%) (R$)', reais(k.revenue_sessions), reais(p.revenue_sessions)],
     ['  do Me Salva+ (R$)', reais(k.revenue_plus), reais(p.revenue_plus)],
-    ['Sessões realizadas', k.sessions, p.sessions],
+    ['Sessões realizadas', k.sessions, p.sessions ?? ''],
     ['Ticket médio (R$)', reais(k.ticket), reais(p.ticket)],
-    ['Pacientes ativos', k.patients_active, p.patients_active],
-    ['Profissionais ativos', k.pros_active, p.pros_active],
+    ['Pacientes ativos', k.patients_active, p.patients_active ?? ''],
+    ['Profissionais ativos', k.pros_active, p.pros_active ?? ''],
     ['Profissionais aguardando verificação', k.pros_pending, ''],
     ['Assinantes do Me Salva+ (hoje)', k.plus_subscribers, ''],
-    ['Sessões a preço social', k.social_sessions, p.social_sessions],
+    ['Sessões a preço social', k.social_sessions, p.social_sessions ?? ''],
     ['Pacientes com 2 ou mais sessões', `${m.retention.two_plus} (${m.retention.two_plus_pct}%)`, ''],
     ['Pacientes com pacote recorrente', `${m.retention.package} (${m.retention.package_pct}%)`, ''],
     ['Ocupação das vagas sociais fixas', `${m.social.used} de ${m.social.offered} (${m.social.occupancy_pct}%)`, ''],

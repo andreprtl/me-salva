@@ -2,6 +2,35 @@
 
 Todas as mudanças importantes do Me Salva ficam registradas aqui. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.0.0] — 2026-11-21
+
+Etapa 4: o Me Salva publicado online no Render, em {{LINK_PUBLICO}}. Quem já tem o `data/mesalva.db` da versão 1.3 continua com o mesmo banco: nada mudou no esquema.
+
+### Adicionado
+
+- **Verificação de saúde** `GET` e `HEAD /api/health` (`src/app.js`): confere que o banco responde (`SELECT 1`) e devolve `{ "ok": true, "version": "2.0.0" }` com `Cache-Control: no-store`, sem ler cookie nem sessão. Se o banco falhar, responde 503 com `{ "ok": false }`; outros métodos recebem 405. Fica fora do roteador, para não passar pela leitura da sessão, e é o `healthCheckPath` do Render.
+- **Publicação no Render** (`render.yaml`, um Blueprint): plano gratuito, região Virgínia (a mais perto do Brasil, que não muda depois de criado o serviço), branch `main`, `autoDeployTrigger: checksPass` (cada commit novo da `main` só é publicado depois que o GitHub Actions passa), build `node --version` (sem dependências), início com `npm start`, `healthCheckPath: /api/health` e as variáveis `NODE_VERSION=22`, `NODE_ENV=production`, `DEMO_MODE=true` e `NOTES_KEY`, gerada pelo Render (`generateValue`) e igual nos reinícios.
+- **Variável `TRUST_PROXY`** (`src/config.js`): ligada por padrão quando `NODE_ENV=production`; `TRUST_PROXY=false` desliga. O `.env.example` ganhou `TRUST_PROXY`, `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`, comentados.
+- **`PORT=0`** escolhe uma porta livre (usado nos testes). O log mostra a porta real e, no Render, o endereço público (variável `RENDER_EXTERNAL_URL`).
+- **Seção "Publicação"** no README e a seção 15 de `docs/DOCUMENTACAO.md`: o que o `render.yaml` configura, como publicar de novo depois de uma mudança e os cuidados do plano gratuito.
+- **Testes**: `test/deploy.test.js`, com 8 testes (verificação de saúde; 503 com o banco falhando; `Secure` e HSTS em produção; sem `Secure` no computador mesmo com um cabeçalho inventado; IP real; limite só com senha errada; cabeçalhos do SSE e sinal de vida abaixo de 100 s; e o `server.js` de verdade subindo duas vezes com a pasta de dados apagada, recriando o banco e as contas de demonstração e parando com `SIGTERM` com código 0). O total passou para 66 testes em 8 arquivos.
+
+### Alterado
+
+- **IP real atrás do proxy** (`clientIp`, `src/http.js`): com `TRUST_PROXY` ligado, vale o `CF-Connecting-IP` (a Cloudflare fica na frente do Render e sobrescreve o valor que o navegador mandar) e, de reserva, o primeiro IP válido do `X-Forwarded-For` (o Render acrescenta o IP real, mas não apaga o que o navegador mandou antes). Sem proxy confiável, vale o IP da conexão. O prefixo `::ffff:` é removido.
+- **Limite de tentativas de entrada**: passou a contar só senha errada, no máximo 12 por IP a cada 5 minutos; depois disso, nem a senha certa entra até a janela passar. Numa sala de aula a turma inteira sai pelo mesmo IP da rede da faculdade e entra com as contas de demonstração, e antes 12 entradas certas bloqueavam todo mundo. O cadastro continua com 12 tentativas por IP a cada 5 minutos. O `rateLimiter` (`src/security.js`) ganhou `limit.blocked(chave)` e `limit.hit(chave)` e limpa as janelas vencidas quando passa de 10.000 chaves.
+- **`server.js`**: `keepAliveTimeout` de 120 s e `headersTimeout` de 125 s. O proxy do Render reaproveita conexões por até 120 s, e com o padrão de 5 s do Node aparecia erro 502 de vez em quando.
+- O canal em tempo real já tinha os cabeçalhos certos (`text/event-stream`, `Cache-Control: no-cache, no-transform` e `X-Accel-Buffering: no`) e o sinal de vida a cada 25 s, abaixo dos 100 s em que a Cloudflare corta conexões paradas; agora há um teste para isso. O service worker não tem endereço fixo e funciona em qualquer domínio HTTPS.
+- Limitações conhecidas: entram os limites do plano gratuito do Render (o serviço dorme depois de 15 minutos sem pedidos, e o disco é apagado a cada reinício, nova publicação ou quando o serviço dorme).
+- README e `docs/DOCUMENTACAO.md` atualizados para a versão 2.0; versão `2.0.0` no `package.json` (Configurações mostra "versão 2.0").
+
+### Segurança
+
+- **HTTPS** (`isHttps`, `src/http.js`): em produção, sempre; fora dela, só com proxy confiável e `X-Forwarded-Proto: https`. Antes, qualquer pedido com `X-Forwarded-Proto: https` ganhava cookie `Secure`.
+- O cookie de sessão leva `Secure` em HTTPS, inclusive o cookie de saída, e todas as respostas HTTPS levam `Strict-Transport-Security: max-age=31536000` (1 ano).
+- O IP usado no limite de entrada vem primeiro do `CF-Connecting-IP`, que a Cloudflare sobrescreve. Antes vinha do primeiro item do `X-Forwarded-For`, que o navegador pode inventar (o Render acrescenta ao que vier, sem apagar); esse cabeçalho agora é só a reserva.
+- `/api/health` não lê cookie nem sessão e devolve só se o banco responde e a versão.
+
 ## [1.3.0] — 2026-11-21
 
 Etapa 3C: painel de métricas do negócio, dados de demonstração coerentes e revisão geral das telas. Quem já tem o `data/mesalva.db` da versão 1.2 continua com o mesmo banco: a tabela `events` é criada sozinha na primeira inicialização. Como os eventos antigos não existem, o painel de métricas fica vazio até usar "Restaurar dados de demonstração" (ou `npm run seed`), que recria o histórico e os eventos.

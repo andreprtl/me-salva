@@ -1,8 +1,9 @@
 // Monta a aplicação: rotas da API, sessão do usuário, cabeçalhos de segurança e arquivos do site.
 // Caminho de uma requisição: cabeçalhos de segurança → rota da API (ou arquivo estático) → checagem
 // de CSRF → leitura do corpo → usuário da sessão → handlers da rota → resposta JSON.
+// A verificação de saúde (/api/health, v2.0) responde antes de tudo isso, sem sessão.
 import { fileURLToPath } from 'node:url';
-import { createRouter, readJson, sendJson, parseCookies, serveStatic, HttpError } from './http.js';
+import { createRouter, readJson, sendJson, parseCookies, serveStatic, HttpError, clientIp, isHttps } from './http.js';
 import { sha256 } from './security.js';
 import { COOKIE } from './guards.js';
 export { COOKIE, requireUser, requireRole } from './guards.js';
@@ -60,6 +61,17 @@ export function createApp({ db, config, notesKey, push = createPush({ db, config
     return row;
   }
 
+  // Verificação de saúde (v2.0): o Render chama GET /api/health antes de pôr uma versão nova no ar e de tempos
+  // em tempos depois disso. Não lê cookie nem dados de ninguém: só confere que o banco responde e devolve a versão.
+  // Fica fora do roteador para não passar pela leitura de sessão; aceita HEAD, que alguns monitores usam.
+  function health(req, res) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Método não permitido.');
+    let ok = true;
+    try { db.get('SELECT 1 AS ok'); } catch { ok = false; }
+    res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(req.method === 'HEAD' ? undefined : JSON.stringify(ok ? { ok, version: APP_VERSION } : { ok }));
+  }
+
   async function handle(req, res) {
     res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -67,7 +79,11 @@ export function createApp({ db, config, notesKey, push = createPush({ db, config
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
     const url = new URL(req.url, 'http://localhost');
+    const https = isHttps(req, config);
+    // HSTS (v2.0): depois da primeira visita por HTTPS, o navegador nunca mais abre o endereço em HTTP (1 ano).
+    if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
+      if (url.pathname === '/api/health') return health(req, res);
       if (url.pathname.startsWith('/api/')) {
         const m = router.match(req.method, url.pathname);
         if (!m) throw new HttpError(404, 'Rota não encontrada.');
@@ -77,8 +93,9 @@ export function createApp({ db, config, notesKey, push = createPush({ db, config
         req.params = m.params;
         req.query = Object.fromEntries(url.searchParams);
         req.body = await readJson(req);
-        req.ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress;
-        req.secure = req.headers['x-forwarded-proto'] === 'https' || config.production;
+        // IP real e HTTPS, também atrás do proxy do Render (src/http.js explica de onde vem cada um).
+        req.ip = clientIp(req, config.trustProxy);
+        req.secure = https;
         req.user = loadUser(req);
         // Executa os handlers em ordem. Uma guarda que lança erro interrompe; um handler que devolve valor responde com ele em JSON.
         for (const h of m.handlers) {

@@ -2,6 +2,7 @@
 // Faz o papel do Express para o projeto rodar só com o Node, sem `npm install`.
 import { createReadStream, statSync } from 'node:fs';
 import { join, extname, resolve, sep } from 'node:path';
+import { isIP } from 'node:net';
 
 // Erro com status HTTP. As rotas lançam HttpError e app.js transforma em resposta JSON { error }.
 export class HttpError extends Error {
@@ -65,6 +66,35 @@ export function readJson(req, limit = 3 * 1024 * 1024) {
 export function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(body));
+}
+
+// Tira o prefixo que o Node põe em endereços IPv4 recebidos por IPv6 ('::ffff:1.2.3.4' → '1.2.3.4').
+const plainIp = (ip) => (ip.startsWith('::ffff:') && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip);
+
+// IP de quem fez o pedido (v2.0), usado no limite de tentativas de entrada e de cadastro.
+// Atrás de um proxy confiável (trustProxy, ligado em produção), a conexão chega do proxy, e o IP de verdade vem
+// nos cabeçalhos que ele põe:
+//   1. CF-Connecting-IP: a Cloudflare, que fica na frente do Render, preenche com o IP de quem se conectou a ela
+//      e troca qualquer valor que o navegador tenha mandado. É o único que não dá para inventar.
+//   2. X-Forwarded-For: o Render acrescenta o IP real à lista, mas não apaga o que o navegador mandou antes,
+//      então o primeiro IP válido só serve de reserva (por exemplo, se um dia a Cloudflare sair da frente).
+// Sem proxy (rodando no computador), esses cabeçalhos seriam inventáveis por qualquer um: vale o IP da conexão.
+export function clientIp(req, trustProxy) {
+  if (trustProxy) {
+    const cf = String(req.headers['cf-connecting-ip'] || '').trim();
+    if (isIP(cf)) return plainIp(cf);
+    for (const part of String(req.headers['x-forwarded-for'] || '').split(',')) {
+      if (isIP(part.trim())) return plainIp(part.trim());
+    }
+  }
+  return plainIp(String(req.socket?.remoteAddress || ''));
+}
+
+// O pedido chegou por HTTPS? Em produção, sempre: o Render só entrega o app pelo endereço https://.
+// Fora de produção, só se um proxy confiável disser (X-Forwarded-Proto); o próprio navegador não decide isso.
+export function isHttps(req, { production, trustProxy }) {
+  if (production) return true;
+  return Boolean(trustProxy) && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
 
 // Transforma o cabeçalho Cookie em objeto { nome: valor }.

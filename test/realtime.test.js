@@ -54,7 +54,7 @@ async function freshLogin(email) {
   api.user = r.data.user;
   return api;
 }
-// Reaproveita o login de cada conta entre os testes (o servidor limita 12 entradas por IP a cada 5 minutos).
+// Reaproveita o login de cada conta entre os testes (cada entrada faz um hash de senha, que é lento de propósito).
 const logged = new Map();
 async function login(email) {
   if (!logged.has(email)) logged.set(email, await freshLogin(email));

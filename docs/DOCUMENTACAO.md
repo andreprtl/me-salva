@@ -801,7 +801,7 @@ Um indicador novo:
 
 ## 15. Publicação (Render)
 
-Desde a v2.0, o Me Salva está publicado no Render, no plano gratuito, em **{{LINK_PUBLICO}}**. Os dados são de demonstração. O arquivo `render.yaml`, na raiz, é um Blueprint: o Render lê o arquivo, cria o serviço e depois publica sozinho cada commit novo da `main`.
+Desde a v2.0, o Me Salva está publicado no Render, no plano gratuito, em **https://me-salva.onrender.com**. Os dados são de demonstração. O arquivo `render.yaml`, na raiz, é um Blueprint: o Render lê o arquivo, cria o serviço e depois publica sozinho cada commit novo da `main`.
 
 ### 15.1 O que o `render.yaml` configura
 
@@ -842,7 +842,7 @@ Outras, que não estão no `render.yaml`:
 2. Abra um pull request para a `main`; o GitHub Actions roda os testes.
 3. Com os testes verdes, faça o merge na `main`.
 4. O Render espera os testes do commit na `main` passarem e publica sozinho, em alguns minutos. Acompanhe em Render → serviço `me-salva` → Events e Logs.
-5. Confira `{{LINK_PUBLICO}}/api/health`: a versão mostrada é a do `package.json`.
+5. Confira `https://me-salva.onrender.com/api/health`: a versão mostrada é a do `package.json`.
 
 Se os testes falharem, o Render não publica. Para publicar na hora, use Manual Deploy → Deploy latest commit. Para voltar atrás, use Rollback num deploy anterior (no plano gratuito, só os dois anteriores).
 
@@ -861,7 +861,7 @@ Para rodar como em produção no computador: `NODE_ENV=production npm start`. O 
 
 ### 15.5 Como conferir
 
-- **Verificação de saúde**: `{{LINK_PUBLICO}}/api/health` (`GET` ou `HEAD`) confere que o banco responde e devolve `{ "ok": true, "version": "2.0.0" }` com `Cache-Control: no-store`, sem ler cookie nem sessão. Se o banco falhar, responde 503 com `{ "ok": false }`; outros métodos recebem 405. Fica fora do roteador, em `src/app.js`, e é a rota que o Render usa para saber se o app está no ar.
+- **Verificação de saúde**: `https://me-salva.onrender.com/api/health` (`GET` ou `HEAD`) confere que o banco responde e devolve `{ "ok": true, "version": "2.0.0" }` com `Cache-Control: no-store`, sem ler cookie nem sessão. Se o banco falhar, responde 503 com `{ "ok": false }`; outros métodos recebem 405. Fica fora do roteador, em `src/app.js`, e é a rota que o Render usa para saber se o app está no ar.
 - **Log**: ao iniciar, o servidor mostra a porta real e, no Render, o endereço público (variável `RENDER_EXTERNAL_URL`). Veja em Render → serviço `me-salva` → Logs.
 - **Conexões do proxy**: o `server.js` usa `keepAliveTimeout` de 120 s e `headersTimeout` de 125 s. O proxy do Render reaproveita conexões por até 120 s, e com o padrão de 5 s do Node aparecia erro 502 de vez em quando.
 - **Tempo real**: o canal SSE já tinha os cabeçalhos certos (`text/event-stream`, `Cache-Control: no-cache, no-transform` e `X-Accel-Buffering: no`) e manda um sinal de vida a cada 25 s; a Cloudflare, que fica na frente do Render, corta conexões paradas por 100 s.

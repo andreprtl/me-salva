@@ -4,7 +4,7 @@ Todas as mudanças importantes do Me Salva ficam registradas aqui. O formato seg
 
 ## [2.0.0] — 2026-11-21
 
-Etapa 4: o Me Salva publicado online no Render, em {{LINK_PUBLICO}}. Quem já tem o `data/mesalva.db` da versão 1.3 continua com o mesmo banco: nada mudou no esquema.
+Etapa 4: o Me Salva publicado online no Render, em https://me-salva.onrender.com. Quem já tem o `data/mesalva.db` da versão 1.3 continua com o mesmo banco: nada mudou no esquema.
 
 ### Adicionado
 
@@ -12,6 +12,7 @@ Etapa 4: o Me Salva publicado online no Render, em {{LINK_PUBLICO}}. Quem já te
 - **Publicação no Render** (`render.yaml`, um Blueprint): plano gratuito, região Virgínia (a mais perto do Brasil, que não muda depois de criado o serviço), branch `main`, `autoDeployTrigger: checksPass` (cada commit novo da `main` só é publicado depois que o GitHub Actions passa), build `node --version` (sem dependências), início com `npm start`, `healthCheckPath: /api/health` e as variáveis `NODE_VERSION=22`, `NODE_ENV=production`, `DEMO_MODE=true` e `NOTES_KEY`, gerada pelo Render (`generateValue`) e igual nos reinícios.
 - **Variável `TRUST_PROXY`** (`src/config.js`): ligada por padrão quando `NODE_ENV=production`; `TRUST_PROXY=false` desliga. O `.env.example` ganhou `TRUST_PROXY`, `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`, comentados.
 - **`PORT=0`** escolhe uma porta livre (usado nos testes). O log mostra a porta real e, no Render, o endereço público (variável `RENDER_EXTERNAL_URL`).
+- **QR code do link público** em `docs/img/qrcode-link.svg` (também no topo do README), com o logo no centro e correção de erros nível H.
 - **Seção "Publicação"** no README e a seção 15 de `docs/DOCUMENTACAO.md`: o que o `render.yaml` configura, como publicar de novo depois de uma mudança e os cuidados do plano gratuito.
 - **Testes**: `test/deploy.test.js`, com 8 testes (verificação de saúde; 503 com o banco falhando; `Secure` e HSTS em produção; sem `Secure` no computador mesmo com um cabeçalho inventado; IP real; limite só com senha errada; cabeçalhos do SSE e sinal de vida abaixo de 100 s; e o `server.js` de verdade subindo duas vezes com a pasta de dados apagada, recriando o banco e as contas de demonstração e parando com `SIGTERM` com código 0). O total passou para 66 testes em 8 arquivos.
 

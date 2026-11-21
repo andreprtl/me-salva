@@ -1,6 +1,8 @@
 # Me Salva — MVP (versão 2.0)
 
-**Acesse online: {{LINK_PUBLICO}}** · dados de demonstração, projeto acadêmico.
+**Acesse online: https://me-salva.onrender.com** · dados de demonstração, projeto acadêmico.
+
+<img src="docs/img/qrcode-link.svg" alt="QR code que abre https://me-salva.onrender.com" width="180">
 
 **A sua terapia na palma da sua mão.** Plataforma web responsiva que conecta pacientes e famílias a profissionais de saúde mental verificados, com triagem guiada (incluindo um caminho para TEA/ABA), emparelhamento por compatibilidade e **vagas sociais** oferecidas por profissionais recém-formados com supervisão clínica.
 
@@ -94,7 +96,7 @@ Todas usam a senha **`demo1234`** e aparecem como botões na tela de entrada.
 
 **Para mostrar as métricas**, entre como administração e abra **Métricas do negócio** (no menu, nas abas ou no cartão da visão geral). Troque o filtro entre 30 dias, 90 dias e 6 meses, passe o mouse (ou o dedo, ou use as setas do teclado) sobre os gráficos para ver os números de cada semana e baixe o **CSV**. Em "6 meses" aparece "sem base para comparar", porque o histórico simulado não cobre um período anterior desse tamanho.
 
-**Para mostrar o app no celular**, abra o link público ({{LINK_PUBLICO}}) no celular. No Android (Chrome), use o convite da tela inicial ou **Configurações → Instalar o app**; no iPhone (Safari), **Compartilhar → Adicionar à Tela de Início**. O ícone do Me Salva aparece na tela inicial e o app abre em tela cheia. Para receber os lembretes com o app fechado, ligue **Configurações → Avisos do aparelho** (no iPhone, dentro do app instalado).
+**Para mostrar o app no celular**, abra o link público (https://me-salva.onrender.com) no celular. No Android (Chrome), use o convite da tela inicial ou **Configurações → Instalar o app**; no iPhone (Safari), **Compartilhar → Adicionar à Tela de Início**. O ícone do Me Salva aparece na tela inicial e o app abre em tela cheia. Para receber os lembretes com o app fechado, ligue **Configurações → Avisos do aparelho** (no iPhone, dentro do app instalado).
 
 > A câmera e o microfone só funcionam em `http://localhost` ou em endereços `https://`. O mesmo vale para o service worker: em `http://localhost` ele funciona para testes, mas o celular só instala o app num endereço `https://`.
 
@@ -102,7 +104,7 @@ Todas usam a senha **`demo1234`** e aparecem como botões na tela de entrada.
 
 ## Publicação
 
-O Me Salva está publicado no Render, no plano gratuito, em **{{LINK_PUBLICO}}**. Os dados são de demonstração: as contas são as da tabela acima, e nada do que for feito online é guardado de forma permanente.
+O Me Salva está publicado no Render, no plano gratuito, em **https://me-salva.onrender.com**. Os dados são de demonstração: as contas são as da tabela acima, e nada do que for feito online é guardado de forma permanente.
 
 **O que o `render.yaml` configura.** O arquivo é um Blueprint e cria o serviço `me-salva` com: plano gratuito; região Virgínia (a mais perto do Brasil, e que não muda depois de criado o serviço); branch `main`; publicação automática só depois que os testes do GitHub Actions passam (`autoDeployTrigger: checksPass`); build `node --version` (o projeto não tem dependências); início com `npm start`; verificação de saúde em `/api/health`; e as variáveis `NODE_VERSION=22`, `NODE_ENV=production`, `DEMO_MODE=true` e `NOTES_KEY`, gerada pelo Render e que não muda nos reinícios. Para criar o serviço do zero (já foi feito, só uma vez): Render → New → Blueprint → repositório `andreprtl/me-salva` → Apply.
 
@@ -112,7 +114,7 @@ O Me Salva está publicado no Render, no plano gratuito, em **{{LINK_PUBLICO}}**
 2. Abra um pull request para a `main`; o GitHub Actions roda os testes.
 3. Com os testes verdes, faça o merge na `main`.
 4. O Render espera os testes do commit na `main` passarem e publica sozinho, em alguns minutos. Acompanhe em Render → serviço `me-salva` → Events e Logs.
-5. Confira `{{LINK_PUBLICO}}/api/health`: a versão mostrada é a do `package.json`.
+5. Confira `https://me-salva.onrender.com/api/health`: a versão mostrada é a do `package.json`.
 
 Se os testes falharem, o Render não publica. Para publicar na hora, use Manual Deploy → Deploy latest commit. Para voltar atrás, use Rollback num deploy anterior (no plano gratuito, só os dois anteriores).
 

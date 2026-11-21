@@ -2,7 +2,7 @@
 import {
   S, A, F, I, LAYERS, SCREENS, screen, api, run, go, back, tab, replace, refresh, top, every, openLayer, closeLayer,
   confirmSheet, toast, esc, ic, logoMark, avatar, stars, backBtn, brl, brl2, nota, km, when, dayLabel, dateBox,
-  DOW, DOWL, MES, areaName, toggle, copyText, $, bellBtn, countBadge, qrSvg, weekdayOf, dm,
+  DOW, DOWL, MES, areaName, toggle, copyText, $, bellBtn, countBadge, qrSvg, weekdayOf, dm, proLine,
 } from '../core.js';
 import { wide } from './common.js';
 import { notifyInvite } from './notifications.js';
@@ -111,7 +111,7 @@ function pcard(p) {
     ${avatar(p.name, p.color, 56)}
     <div class="pc-main">
       <div class="pc-name">${esc(p.name)}${ic('verified')}</div>
-      <div class="pc-sub">${esc(p.title)} · ${esc(p.approach_short)}</div>
+      <div class="pc-sub">${esc(proLine(p.title, p.approach_short))}</div>
       <div class="tags">${p.topics.slice(0, 2).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
       <div class="pc-meta">${p.modalities.includes('online') ? `<span>${ic('video')}Online</span>` : ''}${p.modalities.includes('presencial') ? `<span>${ic('pin')}${km(p.distance)}</span>` : ''}${p.next_slot ? `<span>${ic('clock')}${when(p.next_slot)}</span>` : '<span>Sem horários</span>'}</div>
     </div>
@@ -164,7 +164,7 @@ screen('busca', {
   load: () => api(query()),
   view: (_, d) => `<header class="bar gut">${backBtn()}<div class="bar-t"><div class="eyebrow">Buscar</div><h1 class="h1">${esc(areaName(S.f.area))}</h1></div><button class="link" data-a="tab" data-v="areas">Trocar área</button></header>
   <div class="gut" style="flex:none">
-    <div class="search-row"><label class="search">${ic('search')}<span class="sr">Buscar</span><input id="q" data-i="q" type="search" placeholder="Buscar especialidade, tema ou nome" value="${esc(S.f.q)}" autocomplete="off"></label><button class="icon-btn" data-a="filtros" aria-label="Filtros">${ic('filter')}${activeCount() ? `<span class="badge">${activeCount()}</span>` : ''}</button></div>
+    <div class="search-row"><label class="search">${ic('search')}<span class="sr">Buscar</span><input id="q" data-i="q" type="search" placeholder="Especialidade, tema ou nome" value="${esc(S.f.q)}" autocomplete="off"></label><button class="icon-btn" data-a="filtros" aria-label="Filtros">${ic('filter')}${activeCount() ? `<span class="badge">${activeCount()}</span>` : ''}</button></div>
     <div class="tools"><div class="seg only-m"><button class="${S.view === 'lista' ? 'on' : ''}" data-a="view" data-v="lista">${ic('list')}Lista</button><button class="${S.view === 'mapa' ? 'on' : ''}" data-a="view" data-v="mapa">${ic('map')}Mapa</button></div><button class="addr" data-a="tab" data-v="config" aria-label="Alterar bairro">${ic('pin')}<span>Perto de ${esc(S.user.bairro)}</span></button></div>
     <div class="chips fchips" id="fchips">${fchips()}</div>
   </div>
@@ -219,7 +219,7 @@ screen('perfil', {
     <main class="scroll gut"><div class="two left">
       <div class="col stick">
         <section class="card col" style="gap:14px">
-          <div class="prof-top">${avatar(p.name, p.color, 92)}<h1 class="h1">${esc(p.name)}</h1><div class="muted">${esc(p.title)} · ${esc(p.approach)}</div>
+          <div class="prof-top">${avatar(p.name, p.color, 92)}<h1 class="h1">${esc(p.name)}</h1><div class="muted">${esc(proLine(p.title, p.approach))}</div>
             ${p.status === 'verified' ? `<span class="verif">${ic('verified')}Registro verificado · ${esc(p.reg)}</span>` : `<span class="pill warn">${ic('clock')}Aguardando verificação</span>`}
             <div class="row" style="gap:6px">${stars(p.rating)}<b class="num">${nota(p.rating)}</b><span class="muted small num">(${p.rating_count} avaliações)</span></div></div>
           <div class="facts"><div class="fact"><b>${brl(p.price)}</b><span>por sessão</span></div><div class="fact"><b>50 min</b><span>duração</span></div><div class="fact"><b>${p.years} ${p.years === 1 ? 'ano' : 'anos'}</b><span>de experiência</span></div></div>
@@ -274,7 +274,7 @@ function agendarHtml(id, d) {
   const q = slot ? slot.quote : null;
   const pack = Boolean(slot && b.rep?.on);
   const summary = pack ? packSummary(id, d, slot) : `<section class="card sum">
-    <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.approach_short)}</div></div></div>
+    <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(proLine(p.title, p.approach_short))}</div></div></div>
     <div class="sum-r"><span>Data</span><b>${slot ? when(slot.start) : 'Escolha um horário'}</b></div>
     <div class="sum-r"><span>Atendimento</span><b>${b.modality === 'online' ? 'Online' : 'Presencial'} · 50 min</b></div>
     ${q && q.discount ? `<div class="sum-r"><span>Desconto Me Salva+</span><b style="color:var(--lav)">− ${brl2(q.discount)}</b></div>` : ''}
@@ -379,7 +379,7 @@ function packSummary(id, d, slot) {
   const discount = sessions.reduce((t, x) => t + x.quote.discount, 0);
   const days = r.prev?.weekdays || r.days;
   return `<section class="card sum">
-    <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.approach_short)}</div></div></div>
+    <div class="row" style="margin-bottom:4px">${avatar(p.name, p.color, 44)}<div class="grow"><b>${esc(p.name)}</b><div class="small muted">${esc(proLine(p.title, p.approach_short))}</div></div></div>
     <div class="sum-r"><span>Pacote</span><b>${esc(weekdaysText(days))}, ${slot.time} · ${r.weeks} semanas</b></div>
     <div class="sum-r"><span>Sessões</span><b>${r.loading || !r.prev ? '…' : `${sessions.length}${sessions.length ? ` · ${dm(sessions[0].start)} a ${dm(sessions.at(-1).start)}` : ''}`}</b></div>
     <div class="sum-r"><span>Atendimento</span><b>${S.bk.modality === 'online' ? 'Online' : 'Presencial'} · 50 min</b></div>
@@ -584,7 +584,7 @@ screen('agenda', {
       <div class="grow"><b>${esc(a.pro_name)}</b><span>${ic('clock')}${when(a.start)}</span><span>${ic(a.modality === 'online' ? 'video' : 'pin')}${a.modality === 'online' ? 'Online' : 'Presencial · ' + esc(a.pro_bairro)}${a.social ? ' · <b style="color:var(--lav);font-weight:600;display:inline">vaga social</b>' : ''}</span></div>
       ${a.status === 'pending_payment' ? '<span class="pill warn">aguardando pagamento</span>' : a.status === 'no_show' ? '<span class="pill">falta</span>' : a.room_open ? '<span class="live">sala aberta</span>' : ''}</div>
       <div class="appt-act">${a.status === 'pending_payment' ? `<button class="btn btn-primary btn-sm" data-a="go" data-v="pix" data-p="${a.payment_id}">${ic('pix')}Concluir pagamento</button><button class="btn btn-ghost btn-sm" data-a="cancelAppt" data-v="${a.id}">Desistir</button>`
-        : a.status === 'confirmed' ? `${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar na sessão</button>` : ''}<button class="btn btn-ghost btn-sm" data-a="go" data-v="chat" data-p="${a.pro_id}">${ic('chat')}Mensagem</button><button class="btn btn-ghost btn-sm" data-a="cancelAppt" data-v="${a.id}">Cancelar</button>`
+        : a.status === 'confirmed' ? `${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar<span class="only-d">&nbsp;na sessão</span></button>` : ''}<button class="btn btn-ghost btn-sm" data-a="go" data-v="chat" data-p="${a.pro_id}" aria-label="Mensagem para ${esc(a.pro_name)}">${ic('chat')}${a.room_open ? '<span class="only-d">Mensagem</span>' : 'Mensagem'}</button><button class="btn btn-ghost btn-sm" data-a="cancelAppt" data-v="${a.id}">Cancelar</button>`
         : `${a.status === 'done' ? (a.review_id ? `<span class="row small" style="gap:6px">Você avaliou ${stars(a.review_rating)}</span>` : `<button class="btn btn-primary btn-sm" data-a="go" data-v="avaliar" data-p="${a.id}">${ic('star')}Avaliar sessão</button>`) : ''}<button class="btn btn-ghost btn-sm" data-a="agendar" data-v="${a.pro_id}">Agendar de novo</button>`}
       </div></section>`;
     // Sessões do mesmo pacote recorrente aparecem juntas, num cartão só (v1.2).
@@ -634,7 +634,11 @@ A.sendRv = (el) => run(async () => {
 
 /* ================= triagem ================= */
 // Triagem em 5 passos; as respostas ficam em S.tri. para = 'filho' abre o caminho TEA/ABA.
-function startTri(para) { S.tri = { step: para ? 1 : 0, para: para || null, idade: null, motivos: [], sinais: [], tempo: null, diag: null, suporte: null, antes: null, modal: null, orc: null, hor: [] }; }
+function startTri(para) {
+  S.tri = { step: para ? 1 : 0, para: para || null, idade: null, motivos: [], sinais: [], tempo: null, diag: null, suporte: null, antes: null, modal: null, orc: null, hor: [] };
+  // Funil do painel de métricas (v1.3): "triagem iniciada". Só o fato, sem respostas; se falhar, a triagem segue normal.
+  if (S.user?.role === 'patient') api('/api/events', { method: 'POST', body: { kind: 'triage_started' } }).catch(() => {});
+}
 A.tri = () => { if (S.user.role !== 'patient') return; startTri(); go('triagem'); };
 const opt = (a, v, on, icn, title, sub) => `<button class="opt ${on ? 'on' : ''}" data-a="${a}" data-v="${esc(v)}"><span class="o-ic">${ic(icn)}</span><div class="grow"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>${on ? ic('check') : ''}</button>`;
 // Um passo da triagem por vez; Continuar só é liberado com a pergunta respondida.
@@ -690,7 +694,7 @@ screen('trires', {
       <div class="callout" style="background:var(--teal-soft)">${ic('sparkle')}<div><b>Nossa sugestão</b><span>${rec}</span></div></div>
       ${r.relaxed.length ? `<div class="banner warn">${ic('info')}<div><b>Ampliamos a busca</b><span>Havia poucas opções com todos os critérios. Algumas indicações ${r.relaxed.includes('orcamento') ? 'passam do valor que você informou' : 'usam outra modalidade'}, e isso aparece no cartão.</span></div></div>` : ''}
       ${r.results.length ? `<div class="match">${r.results.map((x) => `<button class="card mcard" data-a="go" data-v="perfil" data-p="${x.pro.id}">
-        <div class="row">${ring(x.score)}<div class="grow"><b>${esc(x.pro.name)}</b><div class="small muted">${esc(x.pro.title)} · ${esc(x.pro.approach_short)}</div><div class="row small" style="gap:4px">${ic('star', 'fill gstar')}<b class="num">${nota(x.pro.rating)}</b><span class="muted">· ${brl(x.price)}${x.price < x.pro.price ? ' (vaga social)' : ''}</span></div></div>${ic('chevR')}</div>
+        <div class="row">${ring(x.score)}<div class="grow"><b>${esc(x.pro.name)}</b><div class="small muted">${esc(proLine(x.pro.title, x.pro.approach_short))}</div><div class="row small" style="gap:4px">${ic('star', 'fill gstar')}<b class="num">${nota(x.pro.rating)}</b><span class="muted">· ${brl(x.price)}${x.price < x.pro.price ? ' (vaga social)' : ''}</span></div></div>${ic('chevR')}</div>
         <ul class="why">${x.reasons.map((w) => `<li>${ic('check')}${esc(w)}</li>`).join('')}${x.warnings.map((w) => `<li style="color:var(--danger)">${ic('info')}${esc(w)}</li>`).join('')}</ul></button>`).join('')}</div>`
       : `<div class="empty">${ic('search')}<div>Não encontramos profissionais com horários para esse perfil agora.</div></div>`}
       <button class="btn btn-ghost btn-block" data-a="triAll">Ver todos os profissionais</button>

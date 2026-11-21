@@ -2,6 +2,54 @@
 
 Todas as mudanças importantes do Me Salva ficam registradas aqui. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.3.0] — 2026-11-21
+
+Etapa 3C: painel de métricas do negócio, dados de demonstração coerentes e revisão geral das telas. Quem já tem o `data/mesalva.db` da versão 1.2 continua com o mesmo banco: a tabela `events` é criada sozinha na primeira inicialização. Como os eventos antigos não existem, o painel de métricas fica vazio até usar "Restaurar dados de demonstração" (ou `npm run seed`), que recria o histórico e os eventos.
+
+### Adicionado
+
+- **Eventos do funil** (`src/events.js`, tabela `events` em `src/db.js`): cada evento guarda só o tipo, o horário de São Paulo (`'AAAA-MM-DDTHH:MM'`) e identificadores internos (`user_id`, `pro_id`, `ref_id`). Nunca o nome, as respostas da triagem, o texto de mensagens ou valores. Tipos: `triage_started`, `triage_done`, `profile_view`, `booking_created`, `payment_confirmed`, `session_done` e `review_sent`.
+  - **Onde são gravados**: triagem concluída (`POST /api/triage`), perfil visto (`GET /api/pros/:id`, só quando quem vê é paciente), reserva (`POST /api/appointments`; `POST /api/packages` conta uma reserva por pacote, com o pacote em `ref_id`), pagamento (confirmação do PIX ou do cartão e o PIX do pacote), sessão realizada (`POST /api/appointments/:id/finish`) e avaliação.
+  - **"Triagem iniciada"** vem do navegador por `POST /api/events`, só para pacientes e só com esse tipo: o navegador não consegue inventar os outros passos.
+  - **Sem repetição**: "triagem iniciada" e "perfil visto" repetidos pela mesma pessoa em 30 minutos contam uma vez (o perfil, para o mesmo profissional).
+  - **Exclusão da conta**: `user_id` e `pro_id` ficam nulos (`ON DELETE SET NULL`), e o evento deixa de apontar para alguém.
+  - **LGPD**: a exportação dos dados (`GET /api/me/export`) traz `eventos_de_uso`, com o tipo e o horário de cada evento da pessoa.
+- **Métricas do negócio** (`src/metrics.js`) e duas rotas só da administração: `GET /api/admin/metrics?days=30|90|180` (padrão 30) e `GET /api/admin/metrics/export?days=...`, que baixa um CSV em português (separador `;`, vírgula decimal, valores em reais e BOM, com os indicadores do período e do anterior, o funil e as 26 semanas). As definições estão no cabeçalho do arquivo e em `docs/DOCUMENTACAO.md` (seção "Painel de métricas"):
+  - **período**: os últimos N dias, contando hoje, até agora;
+  - **sessões realizadas**: sessões com status `done` que começaram no período;
+  - **valor transacionado**: o que os pacientes pagaram por essas sessões mais as mensalidades do Me Salva+ pagas no período;
+  - **receita da plataforma**: a parte da plataforma nessas sessões (12% do valor de tabela, menos o desconto do Me Salva+) mais as mensalidades do Me Salva+;
+  - **ticket médio**, **pacientes ativos** e **profissionais ativos** (com sessão realizada no período), **assinantes do Me Salva+** e a porcentagem sobre os pacientes ativos;
+  - **funil por coorte**: quem começou a triagem no período e até onde chegou, na ordem dos passos;
+  - **retenção**: entre os pacientes ativos, quantos fizeram 2 ou mais sessões e quantos têm pacote recorrente;
+  - **vagas sociais**: ocupação dos horários fixos de vaga social que já passaram, sessões a preço social e a economia das famílias em relação ao valor de tabela;
+  - **qualidade**: nota média, distribuição das notas e taxa de faltas (faltas ÷ (realizadas + faltas));
+  - **séries semanais** das 26 semanas completas (segunda a domingo; a semana atual fica de fora): sessões, a preço social, faltas, valor transacionado, receita e novos cadastros de pacientes;
+  - a comparação com o período anterior só aparece quando já havia sessões desde o começo dele (por isso "6 meses" mostra "sem base para comparar").
+- **Tela "Métricas do negócio"** (`public/js/screens/metrics.js`), no menu e nas abas da administração e num cartão de atalho na visão geral: aviso "Dados de demonstração", filtro de 30 dias, 90 dias ou 6 meses, 8 indicadores com a variação sobre o período anterior, funil, retenção, vagas sociais, qualidade, tabela das semanas e botão CSV. Os gráficos semanais (sessões empilhadas em valor de tabela e vaga social, receita em linha e novos cadastros) são desenhados em SVG próprio, sem bibliotecas, na largura real e redesenhados quando o tamanho muda; a dica com os números da semana aparece por mouse, toque ou setas do teclado. As cores das séries seguem o tema (`--chart-1` e `--chart-2`: claro `#13998A` e `#6E4FCB`; escuro `#2AA894` e `#9479E8`), conferidas para daltonismo e contraste.
+- **Testes**: `test/metrics.test.js`, com 8 testes (cálculos com dados conhecidos, funil por coorte, retenção, vagas sociais, qualidade, semanas e CSV; eventos e deduplicação; rotas gravando os passos sem dados sensíveis e a exportação LGPD; acesso só da administração e CSV; coerência dos dados de demonstração e "Restaurar"). O total passou para 58 testes em 7 arquivos.
+
+### Alterado
+
+- **Dados de demonstração** (`src/seed.js`): o histórico deixou de sortear pacientes para cada horário e passou a simular a jornada de cada paciente (cadastro, triagem, perfil, reserva, pagamento e sessões no mesmo horário fixo por algumas semanas, com 1 em 5 parando cedo e cerca de 4,5% de faltas). São 26 semanas completas, a semana atual e 14 dias de agenda futura. Nos últimos 30 dias, a simulação dá cerca de 75 pacientes ativos, cerca de 8% deles no Me Salva+ e ticket perto de R$ 95; as sessões por semana crescem cerca de 1,5 vez em 6 meses, e os cadastros vão de cerca de 6 para cerca de 13 por semana. As cenas das versões anteriores (Mariana, a sessão de hoje com a Fernanda, o pacote com o Rafael, o conflito de quinta e as três sessões do Rafael hoje) ficam com os horários guardados antes do histórico, e as vagas sociais de segunda do Rafael ficam livres nos próximos 14 dias, para a triagem TEA/ABA da Mariana continuar indicando o Rafael com 85%. Restaurar os dados recria tudo, inclusive os eventos.
+- A visão geral da administração (`GET /api/admin/overview`) passou a usar as mesmas definições das métricas para o mês: sessões realizadas e a receita delas. O total de triagens vem dos eventos do funil.
+- A agenda do profissional no celular ficou com mensagem, prontuário e cancelar na linha do nome e Entrar, Realizada e Falta numa linha embaixo. Na agenda do paciente, "Entrar" e o ícone de mensagem ficam na mesma linha que "Cancelar".
+- Os cadastros pendentes da administração aparecem em cartões no celular, e a grade de horários mostra os 7 dias no celular sem rolagem.
+- O painel do profissional mostra "Sessões marcadas no mês".
+- O texto de exemplo do campo de busca ficou mais curto ("Especialidade, tema ou nome").
+- README e `docs/DOCUMENTACAO.md` atualizados para a versão 1.3, com a tabela "Avanços desde o MVP (22/10)" no README; versão `1.3.0` no `package.json`.
+
+### Corrigido
+
+- `proLine()` (`public/js/core.js`) junta o título e a abordagem sem repetir: antes o perfil aparecia como "Psicólogo · ABA · ABA".
+- Contraste do texto branco sobre o verde-água: de 3,5:1 para 4,9:1, com a nova cor `--teal-fill` (`#0E7E71` no tema claro).
+- Os campos de texto ganharam o anel de foco do teclado.
+
+### Segurança
+
+- Os eventos do funil não levam dados pessoais nem de saúde: só tipo, horário e identificadores internos. O navegador só registra "triagem iniciada" (e só paciente); os demais passos nascem no servidor.
+- As rotas de métricas e a exportação em CSV respondem só para a administração.
+
 ## [1.2.0] — 2026-11-18
 
 Etapa 3B: app instalável no celular e agendamento recorrente. Quem já tem o `data/mesalva.db` da versão 1.0 ou 1.1 não precisa apagá-lo: as tabelas novas são criadas sozinhas, e as colunas novas (`package_id` em `appointments` e `payments`) são acrescentadas na primeira inicialização, sem perder dados.

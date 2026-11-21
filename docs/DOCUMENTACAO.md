@@ -1,6 +1,6 @@
 # Documentação técnica do MVP Me Salva
 
-Este documento cobre a **versão 1.2** (app instalável no celular, avisos com o app fechado e agendamento recorrente), que se soma à 1.1 (chat em tempo real, central de notificações e lembretes de sessão). O que mudou em cada versão está no [CHANGELOG](../CHANGELOG.md).
+Este documento cobre a **versão 1.3** (painel de métricas do negócio, eventos do funil, dados de demonstração coerentes e revisão geral das telas), que se soma à 1.2 (app instalável no celular, avisos com o app fechado e agendamento recorrente) e à 1.1 (chat em tempo real, central de notificações e lembretes de sessão). O que mudou em cada versão está no [CHANGELOG](../CHANGELOG.md).
 
 Ele explica como o código do MVP está organizado, como as partes conversam entre si e onde mexer para fazer as mudanças mais comuns. Para rodar o projeto, publicar e usar as contas de demonstração, veja o [README](../README.md).
 
@@ -31,7 +31,7 @@ O Me Salva conecta pacientes e famílias a profissionais de saúde mental verifi
 |---|---|
 | Paciente (`patient`) | Faz a triagem, busca profissionais, agenda sessões avulsas ou pacotes recorrentes, paga (PIX ou cartão simulados), conversa no chat em tempo real, recebe notificações e lembretes (também com o app fechado), entra na sala de vídeo, avalia a sessão, assina o Me Salva+ e instala o app no celular |
 | Profissional (`pro`) | Acompanha o painel, gerencia agenda e horários (com os pacientes recorrentes marcados), configura vagas sociais, conversa com pacientes, recebe notificações e lembretes e escreve no prontuário criptografado |
-| Administração (`admin`) | Vê indicadores, aprova ou recusa registros profissionais, restaura os dados de demonstração e dispara lembretes na demonstração |
+| Administração (`admin`) | Vê o painel de métricas do negócio (e baixa o CSV), aprova ou recusa registros profissionais, restaura os dados de demonstração e dispara lembretes na demonstração |
 
 É uma aplicação web única: o mesmo servidor entrega a API (`/api/...`) e os arquivos da interface (`public/`). A interface funciona no computador e no celular e, desde a v1.2, pode ser instalada como app (PWA).
 
@@ -50,6 +50,7 @@ O Me Salva conecta pacientes e famílias a profissionais de saúde mental verifi
 | **Versão do service worker calculada pelo servidor** | O servidor monta `/sw.js` com a versão do `package.json` mais um resumo (hash) de `public/`. Qualquer arquivo alterado gera um service worker novo, e o cache antigo é apagado: ninguém precisa lembrar de trocar um número de versão. |
 | **Web Push implementado com `node:crypto`** | A criptografia do aviso (RFC 8291) e a assinatura VAPID (RFC 8292) usam só ECDH P-256, HKDF, AES-128-GCM e ECDSA, que já vêm no Node. Assim o projeto continua sem dependências. A implementação é conferida com o exemplo oficial da RFC num teste. |
 | **Pacote = várias sessões comuns** | Cada sessão de um pacote recorrente é uma linha de `appointments`, com o próprio preço e o próprio pagamento. Cancelamento, lembretes, sala de vídeo, avaliação, painel e reembolso funcionam sem mudança; o pacote só agrupa e guarda o PIX único. |
+| **Métricas calculadas na hora, gráficos em SVG próprio** | O painel lê as tabelas que já existem mais a `events`, sem tabela de totais para manter em dia, e os gráficos são desenhados à mão em SVG, sem biblioteca, na largura real da tela. Os eventos do funil guardam só tipo, horário e identificadores internos, por causa da LGPD e do assunto (saúde). |
 
 A troca de SQLite por PostgreSQL e da interface por um aplicativo React Native está prevista na Fase 1 do PIPE.
 
@@ -71,6 +72,8 @@ me-salva-mvp/
 │   ├── services.js           consultas reaproveitadas (profissionais, horários, chat, notificações, auditoria)
 │   ├── realtime.js           distribuidor de eventos em tempo real (SSE): conexões por usuário e sinal de vida
 │   ├── reminders.js          lembretes de sessão 24 h e 1 h antes
+│   ├── events.js             eventos do funil: grava só tipo, horário e identificadores internos (v1.3)
+│   ├── metrics.js            cálculos do painel de métricas e exportação em CSV (v1.3)
 │   ├── recurrence.js         pacotes recorrentes: datas, conflitos e sugestão do horário livre mais próximo (v1.2)
 │   ├── pwa.js                monta o service worker com a versão e a lista de arquivos atuais (v1.2)
 │   ├── push.js               Web Push: chaves VAPID, criptografia do aviso e envio (v1.2)
@@ -80,7 +83,7 @@ me-salva-mvp/
 │   ├── pricing.js            valor da sessão e divisão plataforma/profissional
 │   ├── slots.js              disponibilidade semanal → horários e vagas sociais
 │   ├── matching.js           triagem → necessidades → ranking com motivos
-│   ├── seed.js               dados de demonstração (também roda com `npm run seed`)
+│   ├── seed.js               dados de demonstração: histórico simulado por paciente e eventos do funil (também roda com `npm run seed`)
 │   └── routes/
 │       ├── auth.js           cadastro, entrada, saída, contas demo
 │       ├── me.js             conta, Me Salva+, exportação e exclusão (LGPD)
@@ -90,7 +93,8 @@ me-salva-mvp/
 │       ├── push.js           chave pública e inscrição do Web Push (v1.2)
 │       ├── messages.js       conversas, mensagens de texto e áudio, "digitando…" e "visto"
 │       ├── pro.js            painel, perfil, disponibilidade, vagas sociais, prontuário
-│       ├── admin.js          indicadores, verificação de registros, restauração dos dados, lembretes da demonstração
+│       ├── admin.js          visão geral do mês, verificação de registros, restauração dos dados, lembretes da demonstração
+│       ├── metrics.js        painel de métricas, exportação em CSV e POST /api/events (v1.3)
 │       ├── realtime.js       GET /api/stream (canal em tempo real)
 │       └── notifications.js  lista e leitura das notificações
 ├── public/                   interface (servida como arquivos estáticos)
@@ -112,14 +116,16 @@ me-salva-mvp/
 │           ├── notifications.js  painel do sino, avisos do sistema e convite para ativá-los
 │           ├── patient.js    início, busca, perfil, agendamento (com "Repetir"), pagamento, agenda, triagem, avaliação, planos
 │           ├── packages.js   PIX do pacote, tela do pacote, cartão agrupado na agenda e cancelamento (v1.2)
-│           └── pro.js        painel, agenda, horários, perfil, prontuário e administração
+│           ├── metrics.js    tela "Métricas do negócio": indicadores, gráficos em SVG, funil e CSV (v1.3)
+│           └── pro.js        painel, agenda, horários, perfil, prontuário e visão geral da administração
 ├── test/
 │   ├── domain.test.js        regras puras (horários, preço, emparelhamento, segurança)
 │   ├── api.test.js           fluxo completo pela API com banco temporário
 │   ├── realtime.test.js      tempo real, notificações e lembretes
 │   ├── pwa.test.js           service worker, manifesto, ícones, página offline (v1.2)
 │   ├── recurrence.test.js    agendamento recorrente (v1.2)
-│   └── push.test.js          Web Push (v1.2)
+│   ├── push.test.js          Web Push (v1.2)
+│   └── metrics.test.js       eventos do funil, métricas, CSV e dados de demonstração (v1.3)
 ├── scripts/icones.mjs        gera os ícones e as telas de abertura a partir do logo (opcional, precisa do rsvg-convert)
 ├── docs/
 │   ├── DOCUMENTACAO.md       este documento
@@ -172,6 +178,7 @@ Pontos importantes:
 | `roomOpen(appt)` | Se a sala de vídeo já pode ser aberta |
 | `patientBusy(id, de, até)` | Horários das sessões ativas do paciente no período, com qualquer profissional (usado na recorrência) |
 | `packageView(pacote)` | Resumo de um pacote recorrente: padrão em texto ("seg e qua, 08:00"), contagens, valores e nomes |
+| `track(tipo, { user_id, pro_id, ref_id })` | Grava um evento do funil (v1.3, seção 4.7); devolve `false` quando repete um evento recente da mesma pessoa |
 | `audit(user, ação, alvo)` | Registro na trilha de auditoria |
 
 ### 4.3 Tempo real (SSE)
@@ -239,6 +246,26 @@ O que o service worker faz:
 
 **Segurança**: só são aceitos endereços HTTPS, na porta padrão, dos serviços de push conhecidos (`fcm.googleapis.com`, `android.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com` e `*.notify.windows.com`). Sem essa lista, alguém poderia cadastrar um endereço qualquer e fazer o servidor acessá-lo (SSRF). O aviso vai criptografado para o aparelho; o serviço do fabricante não lê o conteúdo. Como na v1.1, o texto das mensagens do chat nunca entra na notificação.
 
+### 4.7 Eventos do funil
+
+O arquivo `src/events.js` cria `svc.track(tipo, { user_id, pro_id, ref_id, at })`, que grava uma linha na tabela `events`. É a matéria-prima do funil do painel de métricas (seção 7.8).
+
+**O que é guardado**: só o tipo, o horário de São Paulo (`'AAAA-MM-DDTHH:MM'`) e identificadores internos (`user_id` do paciente, `pro_id` do profissional e `ref_id` da sessão ou do pacote). Nunca o nome, as respostas da triagem, o texto de mensagens ou valores em dinheiro.
+
+| Tipo (`kind`) | Quando é gravado | Onde |
+|---|---|---|
+| `triage_started` | O paciente abre a triagem | Navegador, por `POST /api/events` (só pacientes, só esse tipo) |
+| `triage_done` | A triagem é concluída | `POST /api/triage` |
+| `profile_view` | Um paciente vê o perfil de um profissional verificado | `GET /api/pros/:id` (só quando quem vê é paciente) |
+| `booking_created` | O paciente reserva um horário | `POST /api/appointments`; em `POST /api/packages`, uma reserva por pacote, com o pacote em `ref_id` |
+| `payment_confirmed` | O pagamento é confirmado | PIX ou cartão da sessão e PIX do pacote (uma vez por pacote) |
+| `session_done` | A sessão é marcada como realizada | `POST /api/appointments/:id/finish` |
+| `review_sent` | O paciente avalia a sessão | `POST /api/appointments/:id/review` |
+
+- **O navegador não inventa passos**: `CLIENT_EVENTS` tem só `triage_started`. Qualquer outro tipo em `POST /api/events` recebe 400, e quem não é paciente recebe 403. Os outros seis nascem dentro das próprias rotas do servidor.
+- **Sem repetição**: `triage_started` e `profile_view` repetidos pela mesma pessoa em 30 minutos (`DEDUPE_MIN`) contam uma vez; no perfil, a conta é por profissional. Reabrir a triagem ou recarregar um perfil não infla o funil.
+- **Exclusão da conta**: `user_id` e `pro_id` têm `ON DELETE SET NULL`. O evento fica, sem apontar para ninguém, e deixa de entrar no funil (que só conta pessoas identificadas).
+- **LGPD**: a exportação (`GET /api/me/export`) traz `eventos_de_uso`, com o tipo e o horário dos eventos da pessoa.
 
 ## 5. Interface
 
@@ -260,6 +287,8 @@ A interface é uma aplicação de página única, em JavaScript puro.
 - **Avisos do sistema**: saem por `registration.showNotification` (o único caminho no Android e no iPhone), com o ícone e o ícone pequeno de barra de status (`icons/badge-96.png`).
 - **Repetir** (`screens/patient.js`): na tela de agendamento, depois de escolher o horário. Os dias oferecidos são os da semana em que o profissional tem aquele horário na grade das próximas 2 semanas. Cada mudança (horário, dias ou semanas) busca a prévia em `/api/pros/:id/recurrence`; as datas com conflito aparecem com "Usar 14:00" ou "Pular data", e o resumo lista as sessões por valor. O estado fica em `S.bk.rep`.
 - **Pacotes** (`screens/packages.js`): tela do PIX do pacote (`pixpacote`), tela do pacote (`pacote`, também aberta pelo profissional pela marca "recorrente"), cartão agrupado na agenda do paciente e a folha "Cancelar só esta sessão / Cancelar esta e as próximas".
+- **Métricas do negócio** (`screens/metrics.js`): tela `metricas`, só da administração, no menu, nas abas e num cartão de atalho na visão geral. Mostra o aviso "Dados de demonstração", o filtro de 30 dias, 90 dias ou 6 meses (`S.mDays`), 8 indicadores com a variação sobre o período anterior, os gráficos semanais, o funil, a retenção, as vagas sociais, a qualidade, a tabela das semanas e o botão CSV. Os gráficos são SVG desenhado à mão, sem biblioteca: a função `chart` desenha na largura real do espaço (depois que a tela aparece, em `after`) e é chamada de novo quando o tamanho muda (`ResizeObserver`), para o texto e os cantos arredondados ficarem nítidos no celular e no computador. Os números da semana aparecem numa dica por mouse, toque ou setas do teclado (com o gráfico em foco; Home e End vão à primeira e à última semana). As séries usam `--chart-1` e `--chart-2` (claro `#13998A` e `#6E4FCB`; escuro `#2AA894` e `#9479E8`), conferidas para daltonismo e contraste; cada gráfico tem descrição para leitores de tela.
+- **Revisão da v1.3**: `proLine()` (`core.js`) junta o título e a abordagem do profissional sem repetir ("Psicólogo · ABA", e não "Psicólogo · ABA · ABA"); o texto branco sobre o verde-água usa `--teal-fill` (`#0E7E71` no tema claro, contraste de 4,9:1, antes 3,5:1); os campos de texto têm anel de foco; no celular, a agenda do profissional traz mensagem, prontuário e cancelar na linha do nome e Entrar, Realizada e Falta numa linha embaixo, a agenda do paciente mantém "Entrar" e a mensagem na linha de "Cancelar", os cadastros pendentes da administração viram cartões e a grade de horários mostra os 7 dias sem rolagem.
 - **Layout**: a partir de 960 px de largura, a interface usa barra lateral; abaixo disso, abas inferiores de aplicativo. Com o app em tela cheia, o conteúdo respeita as áreas seguras (`env(safe-area-inset-*)`).
 - **Tema**: claro por padrão; o escuro é ligado em Configurações e lembrado no navegador.
 - **Segurança**: todo texto vindo da API passa por `esc()` antes de entrar no HTML.
@@ -273,6 +302,7 @@ Telas por arquivo:
 | `screens/patient.js` | `home`, `areas`, `busca`, `perfil`, `agendar`, `pagamento`, `pix`, `confirmado`, `agenda`, `avaliar`, `triagem`, `trires`, `planos` |
 | `screens/packages.js` | `pixpacote`, `pacote` e a camada `packCancel` |
 | `screens/pro.js` | `painel`, `proagenda`, `horarios`, `properfil`, `prontuario`, `admin` |
+| `screens/metrics.js` | `metricas` |
 
 ## 6. Modelo de dados
 
@@ -294,6 +324,7 @@ erDiagram
   packages ||--o{ appointments : "sessões do pacote"
   packages ||--o{ payments : "cobranças do PIX único"
   users ||--o{ push_subscriptions : "aparelhos com Web Push"
+  users ||--o{ events : "eventos do funil"
 ```
 
 | Tabela | Campos principais | Observações |
@@ -313,8 +344,9 @@ erDiagram
 | `audit` | `user_id`, `action`, `target` | Ex.: `login`, `notes.read`, `pro.verified`, `data.export` |
 | `notifications` | `user_id`, `kind`, `title`, `body`, `screen`, `param`, `ref`, `read_at`, `created_at` | `kind` é `message`, `confirmed`, `cancelled`, `reminder`, `review`, `verified` ou `rejected`; `screen` e `param` dizem qual tela abrir ao clicar; `ref` agrupa avisos do mesmo assunto (`chat:12`); `read_at` fica vazio enquanto não lida |
 | `reminders` | `appointment_id`, `kind`, `sent_at` | Chave (`appointment_id`, `kind`), com `kind` igual a `24h` ou `1h`: impede lembrete repetido |
+| `events` | `kind`, `user_id`, `pro_id`, `ref_id`, `at` | v1.3. Eventos do funil. `kind` é `triage_started`, `triage_done`, `profile_view`, `booking_created`, `payment_confirmed`, `session_done` ou `review_sent`; `at` é o horário de São Paulo (`'AAAA-MM-DDTHH:MM'`); `ref_id` é a sessão (ou o pacote, em reserva e pagamento de pacote). Só identificadores internos: sem nome, respostas, texto ou valores. `user_id` e `pro_id` ficam nulos se a conta for excluída (`ON DELETE SET NULL`). Índices por (`kind`, `at`) e por (`user_id`, `at`) |
 
-O esquema fica em `src/db.js`. Como ele usa `CREATE TABLE IF NOT EXISTS`, uma tabela nova é criada sozinha num banco que já existe. Uma coluna nova não seria; por isso a v1.2 trouxe uma lista de colunas acrescentadas (`ADDED_COLUMNS`): ao abrir o banco, `migrate()` confere cada uma com `PRAGMA table_info` e, se faltar, roda `ALTER TABLE ... ADD COLUMN`. Assim, bancos da v1.0 e da v1.1 ganham `package_id` em `appointments` e em `payments` sem perder dados. Uma regra `CHECK` nova continua exigindo apagar `data/mesalva.db`. O "visto" do chat usa os campos `read_by_patient` e `read_by_pro` que já existiam.
+O esquema fica em `src/db.js`. Como ele usa `CREATE TABLE IF NOT EXISTS`, uma tabela nova é criada sozinha num banco que já existe. Uma coluna nova não seria; por isso a v1.2 trouxe uma lista de colunas acrescentadas (`ADDED_COLUMNS`): ao abrir o banco, `migrate()` confere cada uma com `PRAGMA table_info` e, se faltar, roda `ALTER TABLE ... ADD COLUMN`. Assim, bancos da v1.0 e da v1.1 ganham `package_id` em `appointments` e em `payments` sem perder dados. A v1.3 só acrescentou uma tabela (`events`), então um banco da v1.2 a ganha sozinho; como os eventos antigos não existem, o painel de métricas fica vazio até restaurar os dados de demonstração. Uma regra `CHECK` nova continua exigindo apagar `data/mesalva.db`. O "visto" do chat usa os campos `read_by_patient` e `read_by_pro` que já existiam.
 
 ## 7. Regras de negócio
 
@@ -446,6 +478,34 @@ Para cada data com conflito, a sugestão é o horário livre mais próximo, até
 
 **7. Na interface.** A agenda do paciente agrupa as sessões do mesmo pacote num cartão (padrão, próxima sessão, progresso e "Ver as N sessões"); a agenda e o painel do profissional marcam o paciente como "recorrente".
 
+### 7.8 Painel de métricas (`metrics.js`)
+
+O painel é visto só pela administração e só lê o banco. `computeMetrics(db, { days })` devolve tudo o que a tela mostra, e `metricsCsv` monta a planilha. Valores em centavos; horários de São Paulo. As definições abaixo são as mesmas do cabeçalho de `src/metrics.js`, da tela e do README.
+
+| Indicador | Definição |
+|---|---|
+| Período | Os últimos N dias, contando hoje (30, 90 ou 180, o "6 meses" da tela), até agora. O período anterior tem o mesmo tamanho e termina onde o atual começa |
+| Sessões realizadas | Sessões com status `done` que começaram no período |
+| Valor transacionado | O que os pacientes pagaram por essas sessões mais as mensalidades do Me Salva+ pagas no período |
+| Receita da plataforma | A parte da plataforma nessas sessões (12% do valor de tabela, menos o desconto do Me Salva+, que sai dessa parte) mais as mensalidades do Me Salva+ |
+| Ticket médio | Valor pago pelas sessões realizadas ÷ número de sessões realizadas (sem as mensalidades) |
+| Pacientes ativos e profissionais ativos | Quem teve pelo menos uma sessão realizada no período |
+| Assinantes do Me Salva+ | Pacientes com o plano `plus` hoje; a porcentagem é sobre os pacientes ativos |
+| Funil | Por coorte: quem começou a triagem no período e até onde chegou, na ordem dos passos (começou a triagem, concluiu, abriu um perfil, reservou, pagou, fez a primeira sessão). Um passo só conta se veio depois do anterior. Cada linha mostra a porcentagem sobre o passo anterior e sobre o início |
+| Retenção | Entre os pacientes ativos: quantos fizeram 2 ou mais sessões no período e quantos têm pacote recorrente |
+| Vagas sociais | Ocupação dos horários fixos de vaga social que já passaram (sessões realizadas ou faltas nesses horários ÷ horários oferecidos), sessões a preço social (inclusive as do preenchimento automático) e a economia das famílias em relação ao valor de tabela |
+| Qualidade | Nota média das avaliações enviadas no período, distribuição das notas (5 a 1) e taxa de faltas = faltas ÷ (realizadas + faltas) |
+| Séries semanais | As 26 semanas completas (segunda a domingo; a semana atual fica de fora): sessões realizadas, sessões a preço social, faltas, valor transacionado, receita e novos cadastros de pacientes |
+
+Regras que mudam a leitura dos números:
+
+- **Comparação com o período anterior**: só aparece quando já havia sessões desde o começo dele (`prev` é `null` caso contrário). Por isso, com o histórico de 26 semanas, "6 meses" mostra "sem base para comparar".
+- **Funil por coorte**: o funil não conta todos os eventos do período, e sim as pessoas que começaram a triagem nele. Quem começou nos últimos dias ainda pode avançar nos passos seguintes, então os passos finais ficam subestimados no período mais recente.
+- **Valor de tabela**: a economia das vagas sociais compara o valor da sessão com o preço atual do profissional. A ocupação das vagas sociais usa a disponibilidade atual dele.
+- **Fuso**: `created_at` e `paid_at` são gravados em UTC; os cálculos convertem para o horário de São Paulo antes de comparar com o período.
+- **Visão geral da administração**: `GET /api/admin/overview` usa a mesma função de indicadores (`kpis`) para o mês (do dia 1 até agora): sessões realizadas e a receita delas. As triagens concluídas vêm dos eventos.
+- **CSV** (`GET /api/admin/metrics/export`): separador `;`, vírgula decimal, valores em reais e BOM no início, para o Excel reconhecer o UTF-8. Traz uma linha de aviso de dados de demonstração, os indicadores do período e do anterior, o funil e as 26 semanas.
+
 ## 8. API completa
 
 Todas as rotas respondem JSON, exceto `/api/stream`, que responde um fluxo `text/event-stream`. Fora da API, `/sw.js` é o service worker montado pelo servidor. Chamadas que alteram dados (POST, PUT, PATCH, DELETE) precisam do cabeçalho `x-ms-client: web`. Valores em dinheiro vêm em centavos.
@@ -459,14 +519,14 @@ Todas as rotas respondem JSON, exceto `/api/stream`, que responde um fluxo `text
 | GET | `/api/me` | Qualquer pessoa | Usuário logado ou `null` (traz `unread` e `notifications`, os contadores) |
 | PATCH | `/api/me` | Logado | Atualiza nome, bairro e endereço |
 | DELETE | `/api/me` | Logado (não admin) | Exclui a conta (corpo `{ "confirm": "EXCLUIR" }`) |
-| GET | `/api/me/export` | Logado | Baixa todos os dados da conta em JSON (inclui as notificações) |
+| GET | `/api/me/export` | Logado | Baixa todos os dados da conta em JSON (inclui as notificações e os eventos de uso, `eventos_de_uso`, com tipo e horário) |
 | POST | `/api/me/plan` | Paciente | Assina ou cancela o Me Salva+ (`action`: `subscribe` ou `cancel`) |
 | GET | `/api/unread` | Logado | Contadores de não lidas: `{ count, notifications }` (reserva do tempo real) |
 | GET | `/api/meta` | Qualquer pessoa | Áreas, bairros, temas, preços e textos da triagem |
 | GET | `/api/pros` | Qualquer pessoa | Busca com `area`, `q`, `modality`, `max`, `social`, `sort` |
 | GET | `/api/pros/:id` | Qualquer pessoa | Perfil, avaliações e distribuição de notas |
 | GET | `/api/pros/:id/slots` | Qualquer pessoa | Horários de 14 dias com o valor para o usuário |
-| POST | `/api/triage` | Logado | Recebe `answers` e devolve necessidades e indicações |
+| POST | `/api/triage` | Logado | Recebe `answers` e devolve necessidades e indicações (registra o evento de triagem concluída) |
 | GET | `/api/appointments` | Paciente ou profissional | Próximas sessões e histórico; `packages` traz o resumo de cada pacote da lista |
 | GET | `/api/appointments/:id` | Participante | Uma sessão |
 | POST | `/api/appointments` | Paciente | Reserva (`pro_id`, `start`, `modality`, `method`) e cria a cobrança |
@@ -492,6 +552,7 @@ Todas as rotas respondem JSON, exceto `/api/stream`, que responde um fluxo `text
 | GET | `/api/notifications` | Logado | As 50 notificações mais recentes e `unread` |
 | POST | `/api/notifications/:id/read` | Logado | Marca uma notificação como lida (de outra pessoa: 404) |
 | POST | `/api/notifications/read-all` | Logado | Marca todas como lidas |
+| POST | `/api/events` | Paciente | Registra o evento de triagem iniciada (`kind`: só `triage_started`; resposta `{ ok, recorded }`) |
 | GET | `/api/push/key` | Logado | Chave pública VAPID do Web Push |
 | POST | `/api/push/subscribe` | Logado | Guarda a inscrição deste aparelho (`endpoint`, `keys.p256dh`, `keys.auth`) |
 | POST | `/api/push/unsubscribe` | Logado | Apaga a inscrição deste aparelho (`endpoint`), só se for da própria conta |
@@ -501,7 +562,9 @@ Todas as rotas respondem JSON, exceto `/api/stream`, que responde um fluxo `text
 | PUT | `/api/pro/social` | Profissional recém-formado | Configura vagas sociais (`social_price`, `social_weekly`, `auto_fill`) |
 | GET | `/api/pro/patients` | Profissional | Lista de pacientes |
 | GET · POST | `/api/pro/patients/:pid/notes` | Profissional | Lê ou escreve no prontuário |
-| GET | `/api/admin/overview` | Administração | Indicadores e verificações pendentes |
+| GET | `/api/admin/overview` | Administração | Indicadores do mês (mesmas definições do painel de métricas) e verificações pendentes |
+| GET | `/api/admin/metrics` | Administração | Painel de métricas; `?days=30`, `90` ou `180` (padrão 30; outro valor recebe 400) |
+| GET | `/api/admin/metrics/export` | Administração | Os mesmos números em CSV para baixar (`?days=...`) |
 | POST | `/api/admin/pros/:id/verify` | Administração | Aprova ou recusa (`decision`: `verified` ou `rejected`) e notifica o profissional |
 | POST | `/api/admin/reset-demo` | Administração | Recria os dados de demonstração e fecha as conexões em tempo real (só no modo demo) |
 | POST | `/api/admin/reminders/run` | Administração | Antecipa o lembrete de 1 h das sessões das próximas 3 horas (só no modo demo) |
@@ -532,6 +595,9 @@ Respostas de erro têm o formato `{ "error": "mensagem" }`, com status 400 (dado
 | Web Push só para serviços de push conhecidos, em HTTPS e porta padrão (sem SSRF); aviso criptografado para o aparelho (RFC 8291) e assinado (VAPID, RFC 8292); `data/vapid.json` só com permissão do dono | `push.js` |
 | Inscrição de push nova numa conta tira o aparelho da conta anterior; sair da conta desinscreve | `routes/push.js`, `pwa.js` |
 | Pacote: preços e horários conferidos de novo no servidor; 404 para quem não é do pacote; código PIX só para o paciente | `routes/packages.js` |
+| Eventos do funil só com tipo, horário e identificadores internos (sem nome, respostas, texto ou valores); o navegador só registra "triagem iniciada", e só paciente; conta excluída deixa o evento sem identificação | `events.js`, `routes/metrics.js`, `db.js` |
+| Métricas e exportação em CSV só para a administração (403 para os demais, 401 sem login) | `routes/metrics.js` |
+| Exportação dos dados (LGPD) inclui os eventos de uso da pessoa | `routes/me.js` |
 
 A chave do prontuário vem de `NOTES_KEY` ou é gerada uma vez em `data/notes.key`. Se essa chave se perder, as notas antigas não podem mais ser lidas.
 
@@ -544,16 +610,17 @@ A triagem não faz diagnóstico, e a plataforma não substitui serviços de emer
 O que é criado:
 
 - 12 profissionais verificados de seis áreas, com preços, bairros, horários e avaliações, e uma profissional aguardando verificação (Beatriz Campos);
-- a paciente de demonstração Mariana, 20 pacientes fictícios (adultos e famílias) e a conta de administração;
-- 182 dias de histórico de sessões, com 5% de faltas e avaliações; a ocupação do Rafael (recém-formado) cresce de cerca de 22% para 68%;
+- a paciente de demonstração Mariana, 20 pacientes fictícios com nome (adultos e famílias), pacientes gerados com nomes combinados e a conta de administração: perto de 290 pacientes cadastrados no total (o número varia um pouco com a data, porque os cadastros são distribuídos pelas semanas até hoje);
+- um **histórico simulado por paciente** (v1.3): em vez de sortear um paciente para cada horário, o `seed.js` simula a jornada de cada um (cadastro, triagem, perfil visto, reserva, pagamento e sessões no mesmo horário fixo por algumas semanas, com 1 em 5 parando cedo e cerca de 4,5% de faltas), com 26 semanas completas, a semana atual e 14 dias de agenda futura. Cada passo grava o evento do funil correspondente, e as mensalidades do Me Salva+ são gravadas como pagamentos. Isso faz o painel de métricas sair coerente: nos últimos 30 dias, cerca de 75 pacientes ativos, cerca de 8% deles no Me Salva+ e ticket perto de R$ 95; as sessões por semana crescem cerca de 1,5 vez ao longo das 26 semanas, e os novos cadastros vão de cerca de 6 para cerca de 13 por semana. As avaliações ficam espalhadas pelo histórico;
 - sessões confirmadas para os próximos 14 dias, incluindo três do Rafael no dia de hoje;
 - notificações: a Mariana e a Fernanda começam com 2 não lidas cada uma, e o Rafael com o aviso da mensagem da Carla;
 - lembretes: sessões que já estariam dentro da janela de 24 h (ou de 1 h) na hora de restaurar ficam marcadas como enviadas, para os pacientes fictícios não receberem uma enxurrada de avisos;
 - para a Mariana: duas sessões passadas com o Bruno (uma avaliada), uma sessão online com a Fernanda numa hora cheia entre 1h30 e 2h30 depois da restauração (limitada a 08:00–23:00 do mesmo dia) e já com o lembrete de 24 h enviado, uma sessão presencial com a Juliana em 3 dias e conversas no chat;
 - o **pacote recorrente** da Mariana com o Rafael (v1.2): seg e qua às 08:00, presencial, 8 semanas, começado na segunda-feira de duas semanas atrás. As sessões que já passaram estão realizadas; as outras, confirmadas. A segunda é vaga social (R$ 45) e a quarta, valor normal (R$ 90). Há também a conversa com o Rafael sobre o pacote e a notificação "Pacote confirmado", já lida;
+- as **cenas das versões anteriores** (a Mariana, a sessão de hoje com a Fernanda, o pacote com o Rafael, o conflito de quinta e as três sessões do Rafael hoje) ficam com os horários guardados antes de simular o histórico, para o histórico nunca ocupá-los; as vagas sociais de segunda do Rafael (09:00, 10:00 e 14:00) ficam livres nos próximos 14 dias, para a triagem TEA/ABA da Mariana continuar indicando o Rafael com 85%;
 - para a **demonstração do conflito**: as terças e quintas do Rafael das 14:00 às 16:00 ficam livres nas próximas semanas, menos a quinta da semana seguinte à próxima terça, às 15:00, reservada pela família Gomes. Montar "ter e qui às 15:00, 4 semanas" a partir da próxima terça mostra esse conflito e a sugestão de 14:00.
 
-Todas as contas de demonstração usam a senha `demo1234`. Como as sessões "de hoje" são criadas no momento da restauração, restaure os dados no dia de cada apresentação. O horário da sessão da Mariana com a Fernanda foi escolhido para mostrar o lembrete de 1 h em tempo real nas duas contas: ele chega sozinho quando faltarem 60 minutos (o que leva pelo menos 30 minutos depois de restaurar) ou na hora, pelo botão "Disparar lembretes agora" da administração. Restaurar apaga também as notificações e os lembretes.
+Todas as contas de demonstração usam a senha `demo1234`. Como as sessões "de hoje" são criadas no momento da restauração, restaure os dados no dia de cada apresentação. O horário da sessão da Mariana com a Fernanda foi escolhido para mostrar o lembrete de 1 h em tempo real nas duas contas: ele chega sozinho quando faltarem 60 minutos (o que leva pelo menos 30 minutos depois de restaurar) ou na hora, pelo botão "Disparar lembretes agora" da administração. Restaurar apaga e recria também as notificações, os lembretes e os eventos do funil.
 
 Para ver o tempo real com duas contas, use duas janelas com cookies separados (uma normal e outra anônima, ou dois perfis do navegador); no mesmo perfil, entrar com a Fernanda desconecta a Mariana.
 
@@ -563,7 +630,7 @@ Para ver o tempo real com duas contas, use duas janelas com cookies separados (u
 npm test
 ```
 
-São 50 testes, em 6 arquivos, com o executor nativo do Node (`node:test`):
+São 58 testes, em 7 arquivos, com o executor nativo do Node (`node:test`):
 
 | Arquivo | O que cobre |
 |---|---|
@@ -573,6 +640,7 @@ São 50 testes, em 6 arquivos, com o executor nativo do Node (`node:test`):
 | `test/pwa.test.js` | `/sw.js` com a versão, sem cache HTTP e com a CSP própria; arquivos da estrutura existem e a API fica fora do cache; versão nova a cada mudança em `public/`; manifesto com ícones 192, 512 e *maskable* do tamanho declarado e atalhos; metas e telas de abertura do iPhone com o tamanho de cada aparelho; página offline com CVV 188, sem scripts embutidos |
 | `test/recurrence.test.js` | Datas do pacote (inclusive na virada do ano); conflitos com outra pessoa, com o próprio paciente e fora da agenda, com sugestão do horário mais próximo; limite semanal de vagas sociais; prévia, criação com PIX único e confirmação de todas as sessões (um aviso no chat e uma notificação por lado); preço por sessão; cancelar só uma, "esta e as próximas" e a regra de 24 h; PIX vencido libera os horários; permissões; validação; lembretes nas sessões do pacote; dados de demonstração; banco da v1.1 ganha as colunas novas |
 | `test/push.test.js` | Criptografia igual ao exemplo da RFC 8291; assinatura VAPID verificada; só serviços de push conhecidos; inscrição, troca de conta e desinscrição; a notificação chega criptografada só ao aparelho de quem recebe, sem o texto da mensagem; inscrição apagada quando o serviço responde 410; exportação sem as chaves |
+| `test/metrics.test.js` | 8 testes: cálculos com dados conhecidos (receita, valor transacionado, ticket, funil por coorte, retenção, vagas sociais, qualidade, semanas e CSV); eventos e deduplicação em 30 minutos; rotas gravando os passos do funil sem dados sensíveis e a exportação LGPD; acesso só da administração, períodos válidos e CSV; coerência dos dados de demonstração com as hipóteses (ticket, Me Salva+, crescimento, funil) e "Restaurar" recriando tudo, inclusive os eventos |
 
 Os testes de API e de tempo real sobem o servidor numa porta livre com um banco temporário, então não mexem em `data/`.
 
@@ -619,6 +687,8 @@ Os testes de API e de tempo real sobem o servidor numa porta livre com um banco 
 | Janela da sala de vídeo | `roomOpen` em `src/services.js` |
 | Antecedência dos lembretes e janela do botão da demonstração | `DAY_MIN`, `HOUR_MIN` e `DEMO_AHEAD_MIN` em `src/reminders.js` |
 | Intervalo do sinal de vida e limite de abas | `heartbeatMs` em `src/config.js` e `maxPerUser` em `src/realtime.js` |
+| Períodos do filtro, número de semanas dos gráficos e passos do funil | `PERIODS`, `WEEKS` e `FUNNEL` em `src/metrics.js` |
+| Janela para não repetir "triagem iniciada" e "perfil visto" | `DEDUPE_MIN` em `src/events.js` |
 
 Depois de mudar uma regra, rode `npm test`; alguns testes conferem os valores atuais e precisarão ser ajustados junto.
 
@@ -643,6 +713,25 @@ Não é preciso trocar a versão do service worker: ela muda sozinha quando um a
 | Até quantos dias a sugestão procura e o intervalo mínimo entre sessões | `SUGGEST_DAYS` e `GAP_MIN` em `src/recurrence.js` |
 | Textos dos avisos do pacote | `confirmPackage` em `src/routes/packages.js` e a rota de cancelamento em `src/routes/appointments.js` |
 
+**Acrescentar um evento ou um indicador (métricas)**
+
+Um evento novo do funil:
+
+1. Em `src/events.js`, acrescente o tipo em `EVENT_KINDS` e, em `src/db.js`, na lista do `CHECK(kind IN (...))` da tabela `events`. Como essa regra faz parte da tabela já criada, é preciso apagar `data/mesalva.db` e reiniciar (ou restaurar os dados num banco novo).
+2. Na rota onde o fato acontece, chame `svc.track('tipo', { user_id, pro_id, ref_id })`, de preferência dentro da mesma transação que grava o dado. Guarde só identificadores internos: nada de nome, respostas, texto ou valores.
+3. Só se o fato nascer no navegador, acrescente o tipo em `CLIENT_EVENTS` e chame `POST /api/events`. Evite: o servidor é mais confiável, e o navegador pode ser forjado.
+4. Se o tipo for repetível por engano (recarregar a tela), acrescente-o em `DEDUPED`.
+5. Se for um passo do funil, acrescente-o em `FUNNEL`, em `src/metrics.js`, na ordem certa (o rótulo aparece na tela e no CSV).
+6. Faça o `seed.js` gravar o evento no histórico simulado, com a função `ev(...)`, para o painel de demonstração não ficar com um passo vazio.
+7. Acrescente um teste em `test/metrics.test.js`.
+
+Um indicador novo:
+
+1. Calcule-o em `src/metrics.js`: um campo novo em `kpis()` (valem as definições da seção 7.8), ou uma função própria chamada em `computeMetrics`. Os valores em dinheiro ficam em centavos.
+2. Mostre-o em `public/js/screens/metrics.js` (um `div.stat` em `m-stats` ou um cartão novo) e, se couber na planilha, acrescente a linha em `metricsCsv`.
+3. Escreva a definição em português claro no cabeçalho de `src/metrics.js` e na seção 7.8 deste documento (e no README, se for um número do pitch).
+4. Acrescente um teste com dados conhecidos em `test/metrics.test.js`.
+
 ## 13. Limitações conhecidas
 
 - **Pagamento simulado**: PIX e cartão não passam por nenhum banco; a confirmação é um botão.
@@ -659,6 +748,10 @@ Não é preciso trocar a versão do service worker: ela muda sozinha quando um a
 - **Um único processo**: o limite de tentativas e o distribuidor de eventos ficam na memória do servidor, e o SQLite atende bem um servidor só. Com várias instâncias, uma aba conectada numa não receberia os eventos gerados na outra; seria preciso um canal compartilhado, como Redis ou o LISTEN/NOTIFY do PostgreSQL.
 - **Limite de conexões em HTTP/1.1**: em `http://localhost`, o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar. No Render, com HTTPS e HTTP/2, isso não acontece.
 - **Disco temporário no Render gratuito**: os dados voltam ao estado de demonstração quando o serviço reinicia.
+- **Métricas só de demonstração**: os números do painel vêm do histórico fictício do `seed.js`. Com usuários reais, o painel só terá dados a partir do dia em que os eventos começaram a ser gravados (v1.3); um banco da v1.2 não tem eventos antigos.
+- **Valor de tabela atual**: a economia das vagas sociais e a ocupação das vagas fixas usam o preço e a disponibilidade atuais de cada profissional, não os de quando a sessão aconteceu.
+- **Funil recente subestimado**: quem começou a triagem nos últimos dias ainda pode avançar, então os passos finais do período mais recente parecem menores do que serão.
+- **Sem acompanhamento individual**: o painel mostra totais e porcentagens; não há tela para ver a jornada de uma pessoa, de propósito.
 
 ## 14. Glossário
 
@@ -684,3 +777,10 @@ Não é preciso trocar a versão do service worker: ela muda sozinha quando um a
 | SSRF | Ataque em que alguém faz o servidor acessar um endereço escolhido por ele |
 | Pacote recorrente | Conjunto de sessões no mesmo horário, em dias fixos da semana, por 4, 8 ou 12 semanas, pago com um PIX só |
 | COMMIT | O momento em que uma transação do banco é confirmada e seus dados passam a valer |
+| Funil | Os passos da jornada do paciente, da triagem à primeira sessão, com quantas pessoas chegam a cada um |
+| Coorte | Grupo de pessoas que começaram juntas num período (aqui, quem iniciou a triagem nele), acompanhado depois passo a passo |
+| Valor transacionado | Tudo o que os pacientes pagaram no período (sessões realizadas e mensalidades do Me Salva+); não é a receita da plataforma |
+| Receita da plataforma | A parte que fica com o Me Salva: 12% das sessões (menos o desconto do Me Salva+) mais as mensalidades |
+| Ticket médio | Valor médio pago por sessão realizada |
+| CSV | Planilha em texto simples; a do painel usa `;`, vírgula decimal e valores em reais |
+| BOM | Marca no início do arquivo que faz o Excel reconhecer acentos (UTF-8) |

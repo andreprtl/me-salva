@@ -9,12 +9,15 @@ export const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', im
 const env = process.env;
 
 export const config = {
-  // Porta HTTP; serviços como o Render definem PORT automaticamente.
-  port: Number(env.PORT) || 3000,
+  // Porta HTTP; serviços como o Render definem PORT automaticamente. PORT=0 escolhe uma porta livre (usado nos testes).
+  port: env.PORT ? Number(env.PORT) : 3000,
   // Pasta onde ficam o banco (mesalva.db) e a chave do prontuário (notes.key).
   dataDir: resolve(env.DATA_DIR || './data'),
-  // Em produção o cookie de sessão é marcado como Secure (só HTTPS).
+  // Em produção o cookie de sessão é marcado como Secure (só HTTPS) e as respostas levam HSTS.
   production: env.NODE_ENV === 'production',
+  // Atrás de um proxy (v2.0): acredita nos cabeçalhos que o proxy do Render e a Cloudflare põem no pedido
+  // (CF-Connecting-IP, X-Forwarded-For e X-Forwarded-Proto). Ligado em produção; TRUST_PROXY=false desliga.
+  trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY !== 'false' : env.NODE_ENV === 'production',
   // Modo demonstração: libera a sala de vídeo em qualquer horário do dia da sessão
   // e mostra o botão "Restaurar dados de demonstração" para o administrador.
   demoMode: (env.DEMO_MODE ?? 'true') !== 'false',

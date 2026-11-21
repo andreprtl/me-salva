@@ -1,6 +1,6 @@
 # Documentação técnica do MVP Me Salva
 
-Este documento cobre a **versão 1.3** (painel de métricas do negócio, eventos do funil, dados de demonstração coerentes e revisão geral das telas), que se soma à 1.2 (app instalável no celular, avisos com o app fechado e agendamento recorrente) e à 1.1 (chat em tempo real, central de notificações e lembretes de sessão). O que mudou em cada versão está no [CHANGELOG](../CHANGELOG.md).
+Este documento cobre a **versão 2.0** (publicação online no Render, seção 15), que se soma à 1.3 (painel de métricas do negócio, eventos do funil, dados de demonstração coerentes e revisão geral das telas), à 1.2 (app instalável no celular, avisos com o app fechado e agendamento recorrente) e à 1.1 (chat em tempo real, central de notificações e lembretes de sessão). O que mudou em cada versão está no [CHANGELOG](../CHANGELOG.md).
 
 Ele explica como o código do MVP está organizado, como as partes conversam entre si e onde mexer para fazer as mudanças mais comuns. Para rodar o projeto, publicar e usar as contas de demonstração, veja o [README](../README.md).
 
@@ -22,6 +22,7 @@ Todos os dados de demonstração são fictícios, e o pagamento é simulado.
 12. [Como fazer mudanças comuns](#12-como-fazer-mudanças-comuns)
 13. [Limitações conhecidas](#13-limitações-conhecidas)
 14. [Glossário](#14-glossário)
+15. [Publicação (Render)](#15-publicação-render)
 
 ## 1. Visão geral
 
@@ -62,11 +63,11 @@ me-salva-mvp/
 ├── CHANGELOG.md              histórico das versões
 ├── package.json              versão e scripts start, dev, seed e test (sem dependências)
 ├── .env.example              variáveis de ambiente opcionais
-├── Dockerfile · render.yaml  publicação em Docker ou no Render
+├── Dockerfile · render.yaml  publicação em Docker ou no Render (o render.yaml é o Blueprint da v2.0, seção 15)
 ├── src/                      servidor
 │   ├── config.js             leitura das variáveis de ambiente
 │   ├── app.js                monta a aplicação: segurança, CSRF, sessão, rotas, arquivos estáticos
-│   ├── http.js               mini-framework: roteador, leitura de JSON, cookies, arquivos estáticos
+│   ├── http.js               mini-framework: roteador, leitura de JSON, cookies, arquivos estáticos, IP real e HTTPS atrás do proxy (v2.0)
 │   ├── guards.js             requireUser e requireRole (controle de acesso)
 │   ├── db.js                 esquema do banco e interface all/get/run/tx/afterCommit
 │   ├── services.js           consultas reaproveitadas (profissionais, horários, chat, notificações, auditoria)
@@ -125,7 +126,8 @@ me-salva-mvp/
 │   ├── pwa.test.js           service worker, manifesto, ícones, página offline (v1.2)
 │   ├── recurrence.test.js    agendamento recorrente (v1.2)
 │   ├── push.test.js          Web Push (v1.2)
-│   └── metrics.test.js       eventos do funil, métricas, CSV e dados de demonstração (v1.3)
+│   ├── metrics.test.js       eventos do funil, métricas, CSV e dados de demonstração (v1.3)
+│   └── deploy.test.js        publicação: saúde, Secure e HSTS, IP real, limite de entrada e servidor de verdade (v2.0)
 ├── scripts/icones.mjs        gera os ícones e as telas de abertura a partir do logo (opcional, precisa do rsvg-convert)
 ├── docs/
 │   ├── DOCUMENTACAO.md       este documento
@@ -156,6 +158,7 @@ sequenceDiagram
 
 Pontos importantes:
 
+- **Verificação de saúde antes de tudo** (v2.0): `GET` e `HEAD /api/health` são respondidos em `app.js` antes do roteador, da leitura da sessão e da conferência do CSRF. A rota só confere que o banco responde e devolve a versão (seção 15.5), então não depende de cookie nem de login.
 - **Rotas** são registradas por arquivos em `src/routes/`. Cada arquivo exporta uma função `(router, ctx)`, chamada uma vez em `createApp`. O `ctx` traz `db`, `config`, `svc` (serviços) e `notesKey`.
 - **Handlers em sequência**: `r.get('/api/pro/dashboard', requireRole('pro'), handler)`. A guarda lança erro se o acesso não for permitido; o handler devolve um objeto, que vira JSON.
 - **Erros**: as rotas lançam `HttpError(status, mensagem)` ou usam `bad(mensagem)` (400). A mensagem chega pronta para aparecer na tela. Erros inesperados vão para o log e o usuário recebe uma mensagem genérica.
@@ -516,6 +519,7 @@ Todas as rotas respondem JSON, exceto `/api/stream`, que responde um fluxo `text
 | POST | `/api/auth/login` | Qualquer pessoa | Entra com e-mail e senha |
 | POST | `/api/auth/logout` | Qualquer pessoa | Sai e apaga a sessão |
 | GET | `/api/demo-accounts` | Qualquer pessoa | Contas de demonstração (só no modo demo) |
+| GET · HEAD | `/api/health` | Qualquer pessoa, sem sessão | Verificação de saúde (v2.0): confere o banco (`SELECT 1`) e devolve `{ "ok": true, "version": "2.0.0" }` com `Cache-Control: no-store`; responde 503 com `{ "ok": false }` se o banco falhar e 405 para outros métodos. É o `healthCheckPath` do Render |
 | GET | `/api/me` | Qualquer pessoa | Usuário logado ou `null` (traz `unread` e `notifications`, os contadores) |
 | PATCH | `/api/me` | Logado | Atualiza nome, bairro e endereço |
 | DELETE | `/api/me` | Logado (não admin) | Exclui a conta (corpo `{ "confirm": "EXCLUIR" }`) |
@@ -576,8 +580,12 @@ Respostas de erro têm o formato `{ "error": "mensagem" }`, com status 400 (dado
 | Proteção | Onde |
 |---|---|
 | Senhas com scrypt e sal aleatório, comparação em tempo constante | `security.js` |
-| Token de sessão aleatório no cookie `HttpOnly`, `SameSite=Lax` e `Secure` em produção; no banco, só o hash | `routes/auth.js`, `app.js` |
-| Limite de 12 tentativas de entrada e de cadastro a cada 5 minutos por IP | `security.js`, `routes/auth.js` |
+| Token de sessão aleatório no cookie `HttpOnly`, `SameSite=Lax` e `Secure` em HTTPS (inclusive o cookie de saída); no banco, só o hash | `routes/auth.js`, `app.js` |
+| Limite de entrada que conta só senha errada: no máximo 12 por IP a cada 5 minutos, e depois disso nem a senha certa entra até a janela passar (v2.0); o cadastro continua com 12 tentativas por IP a cada 5 minutos | `security.js` (`limit.blocked` e `limit.hit`), `routes/auth.js` |
+| IP real atrás do proxy: com `TRUST_PROXY`, vale o `CF-Connecting-IP` (a Cloudflare sobrescreve o que o navegador mandar) e, de reserva, o primeiro IP válido do `X-Forwarded-For`; sem proxy confiável, o IP da conexão (v2.0) | `http.js` (`clientIp`) |
+| HTTPS: em produção, sempre; fora dela, só com proxy confiável e `X-Forwarded-Proto: https` (v2.0) | `http.js` (`isHttps`) |
+| `Strict-Transport-Security: max-age=31536000` (1 ano) em todas as respostas HTTPS (v2.0) | `app.js` |
+| `/api/health` sem cookie, sessão ou dados de ninguém: só o estado do banco e a versão (v2.0) | `app.js` |
 | Proteção contra CSRF: escrita exige o cabeçalho `x-ms-client: web` | `app.js`, `core.js` |
 | CSP sem scripts inline, `X-Frame-Options: DENY`, `nosniff` | `app.js` |
 | Escape de todo texto exibido na interface | `core.js` (`esc`) |
@@ -598,6 +606,8 @@ Respostas de erro têm o formato `{ "error": "mensagem" }`, com status 400 (dado
 | Eventos do funil só com tipo, horário e identificadores internos (sem nome, respostas, texto ou valores); o navegador só registra "triagem iniciada", e só paciente; conta excluída deixa o evento sem identificação | `events.js`, `routes/metrics.js`, `db.js` |
 | Métricas e exportação em CSV só para a administração (403 para os demais, 401 sem login) | `routes/metrics.js` |
 | Exportação dos dados (LGPD) inclui os eventos de uso da pessoa | `routes/me.js` |
+
+Sobre o limite de entrada: numa sala de aula, a turma inteira sai pelo mesmo IP da rede da faculdade e entra com as contas de demonstração. Por isso só a senha errada conta. Antes da v2.0, 12 entradas certas bloqueavam todo mundo. O `rateLimiter` limpa as janelas vencidas quando passa de 10.000 chaves.
 
 A chave do prontuário vem de `NOTES_KEY` ou é gerada uma vez em `data/notes.key`. Se essa chave se perder, as notas antigas não podem mais ser lidas.
 
@@ -630,7 +640,7 @@ Para ver o tempo real com duas contas, use duas janelas com cookies separados (u
 npm test
 ```
 
-São 58 testes, em 7 arquivos, com o executor nativo do Node (`node:test`):
+São 66 testes, em 8 arquivos, com o executor nativo do Node (`node:test`):
 
 | Arquivo | O que cobre |
 |---|---|
@@ -641,6 +651,7 @@ São 58 testes, em 7 arquivos, com o executor nativo do Node (`node:test`):
 | `test/recurrence.test.js` | Datas do pacote (inclusive na virada do ano); conflitos com outra pessoa, com o próprio paciente e fora da agenda, com sugestão do horário mais próximo; limite semanal de vagas sociais; prévia, criação com PIX único e confirmação de todas as sessões (um aviso no chat e uma notificação por lado); preço por sessão; cancelar só uma, "esta e as próximas" e a regra de 24 h; PIX vencido libera os horários; permissões; validação; lembretes nas sessões do pacote; dados de demonstração; banco da v1.1 ganha as colunas novas |
 | `test/push.test.js` | Criptografia igual ao exemplo da RFC 8291; assinatura VAPID verificada; só serviços de push conhecidos; inscrição, troca de conta e desinscrição; a notificação chega criptografada só ao aparelho de quem recebe, sem o texto da mensagem; inscrição apagada quando o serviço responde 410; exportação sem as chaves |
 | `test/metrics.test.js` | 8 testes: cálculos com dados conhecidos (receita, valor transacionado, ticket, funil por coorte, retenção, vagas sociais, qualidade, semanas e CSV); eventos e deduplicação em 30 minutos; rotas gravando os passos do funil sem dados sensíveis e a exportação LGPD; acesso só da administração, períodos válidos e CSV; coerência dos dados de demonstração com as hipóteses (ticket, Me Salva+, crescimento, funil) e "Restaurar" recriando tudo, inclusive os eventos |
+| `test/deploy.test.js` | 8 testes: verificação de saúde (200 com a versão, sem ler cookie, 503 com o banco falhando); `Secure` e HSTS em produção; sem `Secure` no computador mesmo com um cabeçalho `X-Forwarded-Proto` inventado; IP real; limite de entrada só com senha errada; cabeçalhos do SSE e sinal de vida abaixo de 100 s; e o `server.js` de verdade subindo duas vezes com a pasta de dados apagada, recriando o banco e as contas de demonstração e parando com `SIGTERM` com código 0 |
 
 Os testes de API e de tempo real sobem o servidor numa porta livre com um banco temporário, então não mexem em `data/`.
 
@@ -740,14 +751,17 @@ Um indicador novo:
 - **Mapa esquemático**: bairros têm posição aproximada; não há geolocalização nem serviço de mapas.
 - **Videochamada externa**: a sala usa o Jitsi Meet público; a prévia da câmera fica só no aparelho.
 - **Sem e-mail nem SMS**: não há confirmação de cadastro nem recuperação de senha, e os lembretes só aparecem dentro da plataforma.
-- **App instalável só em HTTPS**: o celular só instala o app e só recebe Web Push num endereço `https://` (Etapa 4). Em `http://localhost` dá para testar no computador.
+- **App instalável só em HTTPS**: o celular só instala o app e só recebe Web Push num endereço `https://` (desde a v2.0, o do Render). Em `http://localhost` dá para testar no computador.
 - **iPhone**: os avisos com o app fechado só funcionam no app instalado, com iOS 16.4 ou mais recente; a instalação é manual (Compartilhar → Adicionar à Tela de Início).
 - **Sem uso offline**: sem internet, o app mostra a página offline com o CVV 188; agenda, mensagens e pagamentos precisam do servidor (e não ficam guardados no aparelho, de propósito).
 - **Chaves do Web Push no disco**: no Render gratuito, o disco é apagado ao reiniciar; as chaves VAPID e as inscrições somem juntas, e o app se inscreve de novo na próxima abertura. Para chaves fixas, use `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`.
 - **Pacote só por PIX**: o pacote recorrente é pago com um PIX só, sem a opção de cartão.
 - **Um único processo**: o limite de tentativas e o distribuidor de eventos ficam na memória do servidor, e o SQLite atende bem um servidor só. Com várias instâncias, uma aba conectada numa não receberia os eventos gerados na outra; seria preciso um canal compartilhado, como Redis ou o LISTEN/NOTIFY do PostgreSQL.
 - **Limite de conexões em HTTP/1.1**: em `http://localhost`, o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar. No Render, com HTTPS e HTTP/2, isso não acontece.
-- **Disco temporário no Render gratuito**: os dados voltam ao estado de demonstração quando o serviço reinicia.
+- **Disco temporário no Render gratuito**: o disco é apagado a cada reinício, nova publicação ou quando o serviço dorme, e os dados voltam ao estado de demonstração. Contas criadas, mensagens e agendamentos feitos online somem, e quem estava logado volta para a tela de entrada.
+- **Serviço que dorme**: no plano gratuito, o serviço dorme depois de 15 minutos sem receber pedidos, e a primeira abertura depois disso leva cerca de 1 minuto. Uma aba aberta com o canal em tempo real não conta como acesso. Antes de uma apresentação, abra o link uns 5 minutos antes.
+- **Uma instância só**: o tempo real exige uma instância, porque as conexões ficam na memória do servidor.
+- **750 horas por mês**: o plano gratuito dá 750 horas por mês por conta; um serviço ligado o mês inteiro cabe.
 - **Métricas só de demonstração**: os números do painel vêm do histórico fictício do `seed.js`. Com usuários reais, o painel só terá dados a partir do dia em que os eventos começaram a ser gravados (v1.3); um banco da v1.2 não tem eventos antigos.
 - **Valor de tabela atual**: a economia das vagas sociais e a ocupação das vagas fixas usam o preço e a disponibilidade atuais de cada profissional, não os de quando a sessão aconteceu.
 - **Funil recente subestimado**: quem começou a triagem nos últimos dias ainda pode avançar, então os passos finais do período mais recente parecem menores do que serão.
@@ -784,3 +798,73 @@ Um indicador novo:
 | Ticket médio | Valor médio pago por sessão realizada |
 | CSV | Planilha em texto simples; a do painel usa `;`, vírgula decimal e valores em reais |
 | BOM | Marca no início do arquivo que faz o Excel reconhecer acentos (UTF-8) |
+
+## 15. Publicação (Render)
+
+Desde a v2.0, o Me Salva está publicado no Render, no plano gratuito, em **{{LINK_PUBLICO}}**. Os dados são de demonstração. O arquivo `render.yaml`, na raiz, é um Blueprint: o Render lê o arquivo, cria o serviço e depois publica sozinho cada commit novo da `main`.
+
+### 15.1 O que o `render.yaml` configura
+
+| Campo | Valor | O que faz |
+|---|---|---|
+| `type` e `runtime` | `web` e `node` | Um serviço web em Node.js |
+| `name` | `me-salva` | Nome do serviço no Render |
+| `plan` | `free` | Plano gratuito (limites na seção 15.4) |
+| `region` | `virginia` | A região do Render mais perto do Brasil. Não muda depois de criado o serviço |
+| `branch` | `main` | Branch que o Render acompanha |
+| `autoDeployTrigger` | `checksPass` | Publica cada commit novo da `main` só depois que o GitHub Actions passa |
+| `buildCommand` | `node --version` | O projeto não tem dependências, então não há `npm install`: o "build" só mostra a versão do Node no log |
+| `startCommand` | `npm start` | Inicia o servidor |
+| `healthCheckPath` | `/api/health` | Rota que o Render chama para saber se o app está no ar antes de trocar a versão publicada (seção 15.5) |
+
+### 15.2 Variáveis de ambiente
+
+As do `render.yaml`:
+
+| Variável | Valor | Para que serve |
+|---|---|---|
+| `NODE_VERSION` | `22` | Última versão da linha 22 do Node. O app precisa da 22.13 ou mais recente (`node:sqlite`) |
+| `NODE_ENV` | `production` | Cookie `Secure`, HSTS e IP real atrás do proxy (liga o `TRUST_PROXY`) |
+| `DEMO_MODE` | `true` | Contas de demonstração na tela de entrada, sala de vídeo aberta o dia todo e "Restaurar dados de demonstração" |
+| `NOTES_KEY` | gerada pelo Render (`generateValue`) | Chave do prontuário; fica guardada nas variáveis do serviço e não muda nos reinícios |
+
+Outras, que não estão no `render.yaml`:
+
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `TRUST_PROXY` | ligada com `NODE_ENV=production` | Confia no IP e no HTTPS informados pelo proxy do Render e pela Cloudflare; `TRUST_PROXY=false` desliga |
+| `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` | geradas a cada reinício | Chaves fixas do Web Push. Sem elas, o par é gerado de novo a cada reinício, porque o disco é apagado. Para gerar: `node -e "import('./src/push.js').then(m=>console.log(m.generateVapidKeys()))"` |
+| `PORT` | `3000` | O Render define a porta sozinho; `PORT=0` escolhe uma porta livre (usado nos testes) |
+
+### 15.3 Como publicar de novo depois de uma mudança
+
+1. Crie uma branch, faça as mudanças e rode `npm test`.
+2. Abra um pull request para a `main`; o GitHub Actions roda os testes.
+3. Com os testes verdes, faça o merge na `main`.
+4. O Render espera os testes do commit na `main` passarem e publica sozinho, em alguns minutos. Acompanhe em Render → serviço `me-salva` → Events e Logs.
+5. Confira `{{LINK_PUBLICO}}/api/health`: a versão mostrada é a do `package.json`.
+
+Se os testes falharem, o Render não publica. Para publicar na hora, use Manual Deploy → Deploy latest commit. Para voltar atrás, use Rollback num deploy anterior (no plano gratuito, só os dois anteriores).
+
+Para criar o serviço do zero (uma vez só, já feito): Render → New → Blueprint → repositório `andreprtl/me-salva` → Apply.
+
+Para rodar como em produção no computador: `NODE_ENV=production npm start`. O cookie fica `Secure` e as respostas levam HSTS; o Chrome aceita cookie `Secure` em `http://localhost`.
+
+### 15.4 Plano gratuito
+
+- **O serviço dorme** depois de 15 minutos sem receber pedidos, e a primeira abertura depois disso leva cerca de 1 minuto. Uma aba aberta com o canal em tempo real não conta como acesso.
+- **O disco é apagado** a cada reinício, nova publicação ou quando o serviço dorme. O banco e os dados de demonstração são recriados sozinhos na inicialização seguinte. Contas criadas, mensagens e agendamentos feitos online somem, e quem estava logado volta para a tela de entrada e entra de novo. Ao entrar, se os avisos estiverem ligados naquele aparelho, o app o inscreve de novo para o Web Push.
+- **As chaves VAPID** são geradas de novo a cada reinício, a não ser que `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` sejam definidas no Render.
+- **Uma instância só**, o que o tempo real exige: as conexões ficam na memória do servidor.
+- **750 horas grátis por mês por conta**; um serviço ligado o mês inteiro cabe.
+- **Antes de uma apresentação**, abra o link uns 5 minutos antes e use "Restaurar dados de demonstração" na administração.
+
+### 15.5 Como conferir
+
+- **Verificação de saúde**: `{{LINK_PUBLICO}}/api/health` (`GET` ou `HEAD`) confere que o banco responde e devolve `{ "ok": true, "version": "2.0.0" }` com `Cache-Control: no-store`, sem ler cookie nem sessão. Se o banco falhar, responde 503 com `{ "ok": false }`; outros métodos recebem 405. Fica fora do roteador, em `src/app.js`, e é a rota que o Render usa para saber se o app está no ar.
+- **Log**: ao iniciar, o servidor mostra a porta real e, no Render, o endereço público (variável `RENDER_EXTERNAL_URL`). Veja em Render → serviço `me-salva` → Logs.
+- **Conexões do proxy**: o `server.js` usa `keepAliveTimeout` de 120 s e `headersTimeout` de 125 s. O proxy do Render reaproveita conexões por até 120 s, e com o padrão de 5 s do Node aparecia erro 502 de vez em quando.
+- **Tempo real**: o canal SSE já tinha os cabeçalhos certos (`text/event-stream`, `Cache-Control: no-cache, no-transform` e `X-Accel-Buffering: no`) e manda um sinal de vida a cada 25 s; a Cloudflare, que fica na frente do Render, corta conexões paradas por 100 s.
+- **App instalável**: o service worker não tem endereço fixo e funciona em qualquer domínio HTTPS.
+- **IP real e HTTPS**: como o Render e a Cloudflare ficam na frente do app, o IP de quem acessa e o HTTPS vêm de cabeçalhos do proxy (seção 9), e o `TRUST_PROXY` liga isso.
+- **Testes**: `test/deploy.test.js` cobre a verificação de saúde, o `Secure` e o HSTS, o IP real, o limite de entrada e o servidor de verdade subindo duas vezes com a pasta de dados apagada, como no Render gratuito (seção 11).

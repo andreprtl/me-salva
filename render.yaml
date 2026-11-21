@@ -1,17 +1,31 @@
-# Configuração para publicar no Render (plano gratuito).
+# Publicação no Render (plano gratuito) como Blueprint: no Render, New → Blueprint → repositório andreprtl/me-salva.
+# O Render lê este arquivo, cria o serviço e, depois disso, publica sozinho cada commit novo da main.
+# Passo a passo e cuidados do plano gratuito: seção "Publicação" do README e de docs/DOCUMENTACAO.md.
 services:
   - type: web
     name: me-salva
     runtime: node
     plan: free
+    # Virgínia (EUA) é a região do Render mais perto do Brasil. Não dá para trocar depois de criar o serviço.
+    region: virginia
+    branch: main
+    # Publica cada commit novo da main só depois que os testes do GitHub Actions passam.
+    autoDeployTrigger: checksPass
+    # O projeto não tem dependências, então não há npm install: o "build" só mostra a versão do Node no log.
     buildCommand: node --version
     startCommand: npm start
+    # Rota que o Render chama para saber se o app está no ar antes de trocar a versão publicada.
+    healthCheckPath: /api/health
     envVars:
+      # Última versão da linha 22 do Node. O app precisa da 22.13 ou mais recente (node:sqlite).
       - key: NODE_VERSION
         value: "22"
-      - key: DEMO_MODE
-        value: "true"
+      # Produção: cookie Secure, HSTS e IP real atrás do proxy (TRUST_PROXY liga sozinho com NODE_ENV=production).
       - key: NODE_ENV
         value: production
+      # Modo demonstração: contas demo na tela de entrada, sala de vídeo aberta o dia todo e "Restaurar dados".
+      - key: DEMO_MODE
+        value: "true"
+      # Chave do prontuário: gerada pelo Render uma vez e guardada nas variáveis do serviço (não muda nos reinícios).
       - key: NOTES_KEY
         generateValue: true

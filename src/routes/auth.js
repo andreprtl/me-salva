@@ -32,7 +32,7 @@ export function publicUser(db, svc, u) {
 }
 
 export default function authRoutes(r, { db, config, svc, hub }) {
-  // No máximo 12 tentativas de entrada (e 12 de cadastro) a cada 5 minutos por IP.
+  // A cada 5 minutos, por IP: no máximo 12 senhas erradas na entrada e 12 tentativas de cadastro.
   const limit = rateLimiter({ max: 12, windowMs: 5 * 60 * 1000 });
 
   // Cadastro de paciente ou profissional. O profissional começa como 'pending' e só aparece na busca
@@ -90,11 +90,17 @@ export default function authRoutes(r, { db, config, svc, hub }) {
   });
 
   // Entrada com e-mail e senha. A mensagem de erro é a mesma para e-mail inexistente e senha errada.
+  // Só as tentativas erradas contam para o limite (v2.0): numa sala de aula, a turma inteira sai pelo mesmo IP da
+  // rede da faculdade e entra com as contas demo; o limite existe para barrar quem tenta adivinhar senhas.
+  // Depois de 12 erros, nem a senha certa entra até a janela passar (senão o bloqueio diria qual senha acertou).
   r.post('/api/auth/login', (req, res) => {
-    if (!limit('login:' + req.ip)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos e tente de novo.');
+    if (limit.blocked('login:' + req.ip)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos e tente de novo.');
     const mail = String(req.body.email || '').trim().toLowerCase();
     const u = db.get('SELECT * FROM users WHERE email = ?', mail);
-    if (!u || !verifyPassword(String(req.body.password || ''), u.pass_hash)) throw new HttpError(401, 'E-mail ou senha incorretos.');
+    if (!u || !verifyPassword(String(req.body.password || ''), u.pass_hash)) {
+      limit.hit('login:' + req.ip);
+      throw new HttpError(401, 'E-mail ou senha incorretos.');
+    }
     startSession(db, config, req, res, u.id);
     svc.audit(u.id, 'login');
     return { user: publicUser(db, svc, u) };
@@ -108,7 +114,7 @@ export default function authRoutes(r, { db, config, svc, hub }) {
       db.run('DELETE FROM sessions WHERE token_hash = ?', hash);
       hub.dropToken(hash);
     }
-    res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${req.secure ? '; Secure' : ''}`);
     return { ok: true };
   });
 

@@ -50,16 +50,30 @@ export function decrypt(key, { iv, tag, data }) {
   return Buffer.concat([d.update(Buffer.from(data, 'base64')), d.final()]).toString('utf8');
 }
 
-// Limite simples de tentativas por IP (login e cadastro).
+// Limite simples de tentativas por chave (por exemplo, 'login:' + IP), em janelas de windowMs.
+//   limit(key): registra uma tentativa e diz se ela ainda cabe no limite (usado no cadastro);
+//   limit.blocked(key): só consulta, sem registrar; limit.hit(key): só registra.
+// A entrada usa os dois últimos (v2.0): consulta antes e registra só as senhas erradas.
 export function rateLimiter({ max, windowMs }) {
   const hits = new Map();
-  return (key) => {
+  // Janela ainda valendo para a chave, ou null.
+  const current = (key, now) => { const h = hits.get(key); return h && h.reset >= now ? h : null; };
+  const hit = (key) => {
     const now = Date.now();
-    const h = hits.get(key);
-    if (!h || h.reset < now) { hits.set(key, { n: 1, reset: now + windowMs }); return true; }
+    let h = current(key, now);
+    if (!h) {
+      // Antes de abrir uma janela nova, descarta as vencidas quando o mapa cresce (muitos IPs diferentes).
+      if (hits.size > 10000) for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
+      h = { n: 0, reset: now + windowMs };
+      hits.set(key, h);
+    }
     h.n += 1;
     return h.n <= max;
   };
+  const limit = (key) => hit(key);
+  limit.hit = hit;
+  limit.blocked = (key) => (current(key, Date.now())?.n ?? 0) >= max;
+  return limit;
 }
 
 // Código PIX "copia e cola" no formato BR Code (EMV), com CRC16 válido. Chave fictícia.

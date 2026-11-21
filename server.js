@@ -24,10 +24,17 @@ if (db.get('SELECT COUNT(*) n FROM users').n === 0) {
 // createApp devolve a função (req, res) que trata cada requisição HTTP.
 const app = createApp({ db, config, notesKey });
 const server = createServer(app);
+// Atrás do proxy do Render (v2.0): o proxy reaproveita a mesma conexão com o app por até 120 s. O padrão do Node
+// (5 s) fecharia a conexão antes, e o pedido seguinte cairia numa conexão já fechada (erro 502 de vez em quando).
+// O tempo para receber os cabeçalhos precisa ser um pouco maior que o de manter a conexão.
+server.keepAliveTimeout = 120 * 1000;
+server.headersTimeout = 125 * 1000;
 // Lembretes de sessão 24 h e 1 h antes: confere agora e depois a cada minuto.
 const stopReminders = app.ctx.reminders.start();
 server.listen(config.port, () => {
-  console.log(`Me Salva rodando em http://localhost:${config.port}`);
+  // No Render, RENDER_EXTERNAL_URL traz o endereço público (https://….onrender.com).
+  const publicUrl = process.env.RENDER_EXTERNAL_URL ? ` (endereço público: ${process.env.RENDER_EXTERNAL_URL})` : '';
+  console.log(`Me Salva rodando em http://localhost:${server.address().port}${publicUrl}`);
   if (config.demoMode) console.log('Modo demonstração ativo (DEMO_MODE=true).');
 });
 

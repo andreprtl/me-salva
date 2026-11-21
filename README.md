@@ -1,4 +1,6 @@
-# Me Salva — MVP (versão 1.3)
+# Me Salva — MVP (versão 2.0)
+
+**Acesse online: {{LINK_PUBLICO}}** · dados de demonstração, projeto acadêmico.
 
 **A sua terapia na palma da sua mão.** Plataforma web responsiva que conecta pacientes e famílias a profissionais de saúde mental verificados, com triagem guiada (incluindo um caminho para TEA/ABA), emparelhamento por compatibilidade e **vagas sociais** oferecidas por profissionais recém-formados com supervisão clínica.
 
@@ -25,7 +27,7 @@ Projeto da disciplina **Empreendedorismo em Informática** (USP). Os dados de de
 | Avaliações | Só depois de sessão realizada, uma por sessão, com opção anônima; nota média calculada | — |
 | Profissional | Painel com sessões marcadas no mês, ocupação de 6 meses e receita líquida, agenda com presença e falta, edição de perfil e horários, **prontuário criptografado (AES-256-GCM)** com registro de acesso | — |
 | LGPD | Consentimento no cadastro, download dos próprios dados (JSON, com os eventos de uso: só tipo e horário) e exclusão da conta | — |
-| App no celular | **Instalável** (PWA): ícone na tela inicial, abre em tela cheia respeitando o entalhe e a barra inferior, tela de abertura, atalhos no ícone, botão "Instalar o app" e passo a passo no iPhone; sem internet, página offline com o CVV 188 | A instalação no celular precisa do endereço HTTPS da publicação (Etapa 4) |
+| App no celular | **Instalável** (PWA): ícone na tela inicial, abre em tela cheia respeitando o entalhe e a barra inferior, tela de abertura, atalhos no ícone, botão "Instalar o app" e passo a passo no iPhone; sem internet, página offline com o CVV 188 | A instalação no celular precisa do endereço HTTPS da publicação (v2.0, link no topo) |
 | Métricas do negócio | Tela da administração com receita, valor transacionado, sessões, ticket médio, pacientes e profissionais ativos, Me Salva+, funil da triagem à primeira sessão, retenção, vagas sociais e qualidade; gráficos semanais das últimas 26 semanas, filtro de 30 dias, 90 dias ou 6 meses, comparação com o período anterior e exportação em CSV. Os eventos do funil guardam só o tipo, o horário e identificadores internos (sem nome, respostas da triagem, mensagens ou valores) | Os números vêm dos dados de demonstração, que são fictícios |
 | Interface | Computador e celular, tema claro (padrão) e escuro, botão de ajuda imediata (CVV 188) em todas as telas, botão Voltar do aparelho; revisão de contraste (texto branco sobre o verde-água de 4,9:1), anel de foco nos campos e botões ajustados para o celular | — |
 
@@ -33,7 +35,7 @@ Projeto da disciplina **Empreendedorismo em Informática** (USP). Os dados de de
 
 O MVP apresentado em 22/10 era a versão 1.0. Esta tabela compara o que existia naquele dia com o que o app faz agora.
 
-| Área | No MVP de 22/10 (v1.0) | Agora (v1.3) |
+| Área | No MVP de 22/10 (v1.0) | Agora (v2.0) |
 |---|---|---|
 | Chat | atualizava a cada 3 segundos | em tempo real, com "digitando…" e "visto" |
 | Avisos | só mensagens automáticas no chat | central de notificações, lembretes 24 h e 1 h antes e aviso no celular mesmo com o app fechado |
@@ -41,7 +43,8 @@ O MVP apresentado em 22/10 era a versão 1.0. Esta tabela compara o que existia 
 | Famílias ABA | cada sessão agendada e paga separadamente | pacote recorrente: vários dias por semana por 4, 8 ou 12 semanas, conflitos conferidos e um PIX só |
 | Gestão do negócio | 4 números do mês na administração | painel de métricas com receita, funil da triagem à primeira sessão, retenção, vagas sociais e qualidade, gráficos semanais e CSV |
 | Qualidade das telas | — | revisão de contraste, foco do teclado e botões no celular |
-| Testes automáticos | 15 | 58 |
+| Publicação | só no computador, em `localhost` | online no Render: abre no celular por um link ou QR code; o HTTPS permite instalar o app, receber avisos e usar câmera e microfone na sessão |
+| Testes automáticos | 15 | 66 |
 
 Os números do painel de métricas são dados de demonstração, fictícios, gerados para a apresentação: não são resultados reais do Me Salva.
 
@@ -68,7 +71,7 @@ Outros comandos:
 ```bash
 npm run dev    # reinicia sozinho quando um arquivo muda
 npm run seed   # apaga o banco e recria os dados de demonstração
-npm test       # testes automatizados (regras de negócio, API, tempo real, app instalável, recorrência, Web Push e métricas)
+npm test       # testes automatizados (regras de negócio, API, tempo real, app instalável, recorrência, Web Push, métricas e publicação)
 ```
 
 ### Contas de demonstração
@@ -91,20 +94,40 @@ Todas usam a senha **`demo1234`** e aparecem como botões na tela de entrada.
 
 **Para mostrar as métricas**, entre como administração e abra **Métricas do negócio** (no menu, nas abas ou no cartão da visão geral). Troque o filtro entre 30 dias, 90 dias e 6 meses, passe o mouse (ou o dedo, ou use as setas do teclado) sobre os gráficos para ver os números de cada semana e baixe o **CSV**. Em "6 meses" aparece "sem base para comparar", porque o histórico simulado não cobre um período anterior desse tamanho.
 
-**Para mostrar o app no celular**, abra o endereço HTTPS da publicação (Etapa 4) no celular. No Android (Chrome), use o convite da tela inicial ou **Configurações → Instalar o app**; no iPhone (Safari), **Compartilhar → Adicionar à Tela de Início**. O ícone do Me Salva aparece na tela inicial e o app abre em tela cheia. Para receber os lembretes com o app fechado, ligue **Configurações → Avisos do aparelho** (no iPhone, dentro do app instalado).
+**Para mostrar o app no celular**, abra o link público ({{LINK_PUBLICO}}) no celular. No Android (Chrome), use o convite da tela inicial ou **Configurações → Instalar o app**; no iPhone (Safari), **Compartilhar → Adicionar à Tela de Início**. O ícone do Me Salva aparece na tela inicial e o app abre em tela cheia. Para receber os lembretes com o app fechado, ligue **Configurações → Avisos do aparelho** (no iPhone, dentro do app instalado).
 
 > A câmera e o microfone só funcionam em `http://localhost` ou em endereços `https://`. O mesmo vale para o service worker: em `http://localhost` ele funciona para testes, mas o celular só instala o app num endereço `https://`.
 
-> Quem já tem o `data/mesalva.db` da versão 1.0, 1.1 ou 1.2 não precisa apagá-lo: as tabelas e as colunas novas são criadas sozinhas. Num banco da v1.2 não existem eventos antigos, então o painel de métricas começa vazio até usar **Restaurar dados de demonstração**. Em `http://localhost` (HTTP/1.1), o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar; no Render, com HTTPS e HTTP/2, isso não acontece.
+> Quem já tem o `data/mesalva.db` da versão 1.0, 1.1, 1.2 ou 1.3 não precisa apagá-lo: as tabelas e as colunas novas são criadas sozinhas. Num banco da v1.2 não existem eventos antigos, então o painel de métricas começa vazio até usar **Restaurar dados de demonstração**. Em `http://localhost` (HTTP/1.1), o navegador abre no máximo 6 conexões por site e cada aba aberta usa uma para o tempo real, então muitas abas no mesmo navegador podem travar; no Render, com HTTPS e HTTP/2, isso não acontece.
 
-## Publicar na internet (Render, gratuito)
+## Publicação
 
-1. Suba este repositório no GitHub.
-2. Em [render.com](https://render.com), crie um **Web Service** a partir do repositório (o arquivo `render.yaml` já traz a configuração).
-3. Build command: *(deixe vazio)* · Start command: `npm start`.
-4. O endereço gerado já usa HTTPS, então câmera, microfone, a instalação do app e os avisos com o app fechado funcionam no celular.
+O Me Salva está publicado no Render, no plano gratuito, em **{{LINK_PUBLICO}}**. Os dados são de demonstração: as contas são as da tabela acima, e nada do que for feito online é guardado de forma permanente.
 
-No plano gratuito, o disco é apagado quando o serviço reinicia. Para o MVP isso não é problema, porque os dados de demonstração são recriados sozinhos. Também há um `Dockerfile` para rodar em qualquer servidor com Docker:
+**O que o `render.yaml` configura.** O arquivo é um Blueprint e cria o serviço `me-salva` com: plano gratuito; região Virgínia (a mais perto do Brasil, e que não muda depois de criado o serviço); branch `main`; publicação automática só depois que os testes do GitHub Actions passam (`autoDeployTrigger: checksPass`); build `node --version` (o projeto não tem dependências); início com `npm start`; verificação de saúde em `/api/health`; e as variáveis `NODE_VERSION=22`, `NODE_ENV=production`, `DEMO_MODE=true` e `NOTES_KEY`, gerada pelo Render e que não muda nos reinícios. Para criar o serviço do zero (já foi feito, só uma vez): Render → New → Blueprint → repositório `andreprtl/me-salva` → Apply.
+
+**Como publicar de novo depois de uma mudança**
+
+1. Crie uma branch, faça as mudanças e rode `npm test`.
+2. Abra um pull request para a `main`; o GitHub Actions roda os testes.
+3. Com os testes verdes, faça o merge na `main`.
+4. O Render espera os testes do commit na `main` passarem e publica sozinho, em alguns minutos. Acompanhe em Render → serviço `me-salva` → Events e Logs.
+5. Confira `{{LINK_PUBLICO}}/api/health`: a versão mostrada é a do `package.json`.
+
+Se os testes falharem, o Render não publica. Para publicar na hora, use Manual Deploy → Deploy latest commit. Para voltar atrás, use Rollback num deploy anterior (no plano gratuito, só os dois anteriores).
+
+Para rodar como em produção no computador: `NODE_ENV=production npm start` (cookie `Secure` e HSTS; o Chrome aceita cookie `Secure` em `http://localhost`).
+
+**Cuidados do plano gratuito**
+
+- O serviço "dorme" depois de 15 minutos sem receber pedidos, e a primeira abertura depois disso leva cerca de 1 minuto. Uma aba aberta com o canal em tempo real não conta como acesso.
+- O disco é apagado a cada reinício, nova publicação ou quando o serviço dorme. O banco e os dados de demonstração são recriados sozinhos na inicialização seguinte. Contas criadas, mensagens e agendamentos feitos online somem, e quem estava logado volta para a tela de entrada e entra de novo. Ao entrar, se os avisos estiverem ligados naquele aparelho, o app o inscreve de novo para o Web Push.
+- As chaves VAPID também são geradas de novo a cada reinício, a não ser que `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` sejam definidas no Render. Para gerar o par: `node -e "import('./src/push.js').then(m=>console.log(m.generateVapidKeys()))"`.
+- Só pode haver uma instância, o que o tempo real exige (as conexões ficam na memória do servidor).
+- São 750 horas grátis por mês por conta, e um serviço ligado o mês inteiro cabe.
+- **Antes de uma apresentação**, abra o link uns 5 minutos antes e use **Restaurar dados de demonstração** na administração.
+
+Também há um `Dockerfile` para rodar em qualquer servidor com Docker:
 
 ```bash
 docker build -t me-salva .
@@ -117,12 +140,13 @@ Copie `.env.example` para `.env` se quiser mudar algo:
 
 | Variável | Padrão | Para que serve |
 |---|---|---|
-| `PORT` | `3000` | Porta do servidor |
+| `PORT` | `3000` | Porta do servidor (`0` escolhe uma porta livre, usado nos testes) |
 | `DATA_DIR` | `./data` | Pasta do banco SQLite e da chave do prontuário |
 | `DEMO_MODE` | `true` | Abre a sala de vídeo em qualquer horário do dia e libera a restauração dos dados |
 | `NOTES_KEY` | gerada em `data/notes.key` | Chave de criptografia do prontuário (64 caracteres hexadecimais ou uma frase longa) |
 | `VIDEO_BASE_URL` | `https://meet.jit.si/` | Serviço de videochamada |
-| `NODE_ENV` | — | Use `production` para cookies só em HTTPS |
+| `NODE_ENV` | — | Use `production` para cookie `Secure`, HSTS e o IP real atrás do proxy |
+| `TRUST_PROXY` | ligado com `NODE_ENV=production` | Confia no IP e no HTTPS informados pelo proxy do Render e pela Cloudflare; `TRUST_PROXY=false` desliga |
 | `PUSH` | ligado | `off` desliga o envio de avisos com o app fechado (Web Push) |
 | `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` | gerados em `data/vapid.json` | Chaves do Web Push, em base64url. Fixe-as para as inscrições sobreviverem a um disco apagado |
 | `VAPID_SUBJECT` | endereço do repositório | Contato enviado aos serviços de push (`https://...` ou `mailto:...`) |
@@ -194,7 +218,8 @@ me-salva-mvp/
 │   ├── css/styles.css
 │   └── js/                 core.js, app.js, realtime.js, pwa.js e screens/ (paciente, pacotes, profissional, comuns, notificações, métricas)
 ├── scripts/icones.mjs      gera os ícones a partir do logo (opcional)
-├── test/                   testes de regras, da API, do tempo real, do app instalável, da recorrência, do Web Push e das métricas (node:test)
+├── render.yaml             Blueprint da publicação no Render
+├── test/                   testes de regras, da API, do tempo real, do app instalável, da recorrência, do Web Push, das métricas e da publicação (node:test)
 └── docs/img/               capturas de tela
 ```
 
@@ -220,6 +245,7 @@ Com 10 mil perfis, o ranking leva menos de 300 ms (há um teste para isso).
 | GET | `/api/pros/:id/recurrence` | Prévia do pacote recorrente: datas, conflitos, sugestões e valores |
 | POST | `/api/packages` · `/api/packages/:id/pix-simulate` | Cria o pacote com um PIX do total e simula o pagamento |
 | GET | `/api/packages/:id` | Pacote com todas as sessões |
+| GET · HEAD | `/api/health` | Verificação de saúde: confere o banco e devolve `{ "ok": true, "version": "2.0.0" }`, sem sessão (usada pelo Render) |
 | GET/POST | `/api/push/key` · `/api/push/subscribe` · `/api/push/unsubscribe` | Web Push (avisos com o app fechado) |
 | GET | `/api/appointments/:id/room` | Sala de vídeo |
 | GET/POST | `/api/conversations/:outroId` | Chat (o GET já traz o campo `seen`, o "visto") |
@@ -242,7 +268,10 @@ Toda chamada que altera dados exige o cabeçalho `x-ms-client: web` (proteção 
 ## Segurança e privacidade
 
 - Senhas com scrypt e sal aleatório; o token de sessão é guardado só como hash SHA-256.
-- Cookie `HttpOnly` e `SameSite=Lax` (e `Secure` em produção); limite de tentativas de login.
+- Cookie `HttpOnly` e `SameSite=Lax`, e `Secure` em HTTPS (inclusive o cookie de saída); `Strict-Transport-Security` de 1 ano em todas as respostas HTTPS. Em produção o HTTPS vale sempre; fora dela, só quando um proxy confiável informa `X-Forwarded-Proto: https`, e o navegador sozinho não decide isso.
+- IP real atrás do proxy: com `TRUST_PROXY` ligado, vale o `CF-Connecting-IP` (a Cloudflare, na frente do Render, troca o valor que o navegador mandar) e, de reserva, o primeiro IP válido do `X-Forwarded-For`; sem proxy confiável, vale o IP da conexão.
+- Limite de tentativas: a entrada conta só senha errada, no máximo 12 por IP a cada 5 minutos (depois disso, nem a senha certa entra até a janela passar), para que uma turma inteira, que sai pelo mesmo IP da rede da faculdade, possa entrar com as contas de demonstração. O cadastro continua com 12 tentativas por IP a cada 5 minutos.
+- `/api/health` não lê cookie nem sessão e só devolve se o banco responde e a versão.
 - Política de segurança de conteúdo (CSP) sem scripts embutidos; cabeçalhos `X-Frame-Options` e `nosniff`.
 - Prontuário criptografado com AES-256-GCM e trilha de auditoria (leitura, escrita, entrada na sala, exportação).
 - Os eventos em tempo real só vão para o dono da sessão: o destinatário é sempre decidido pelo servidor a partir do banco, uma conexão só recebe eventos do próprio usuário, e uma mensagem vai apenas para as duas pessoas da conversa. Eventos só saem depois que os dados foram gravados.

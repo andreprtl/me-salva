@@ -3,6 +3,7 @@
 import { json } from './db.js';
 import { nowSP, toMinutes } from './time.js';
 import { buildSlots } from './slots.js';
+import { createEvents } from './events.js';
 import { BAIRROS, distanceKm, weekdaysText } from '../public/js/shared/data.js';
 
 // Status que ocupam um horário na agenda (uma sessão cancelada libera o horário).
@@ -197,8 +198,11 @@ export function createServices(db, config, hub = { send() {} }, push = null) {
   // Distância aproximada entre o bairro do usuário e o do profissional.
   const distance = (user, pro) => distanceKm(user?.bairro || 'Bela Vista', pro.bairro);
 
+  // Eventos do funil (v1.3, src/events.js): svc.track('triage_done', { user_id }) etc.
+  const { track } = createEvents(db);
+
   return {
     expirePending, getPro, listPros, parsePro, template, slotsFor, audit, pushMessage, unreadCount, counts, sendCounts,
-    notify, readChatNotifications, roomOpen, distance, patientBusy, packageView,
+    notify, readChatNotifications, roomOpen, distance, patientBusy, packageView, track,
   };
 }

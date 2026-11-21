@@ -7,6 +7,7 @@ import { openTarget, notifyOn } from './screens/notifications.js';
 import './screens/common.js';
 import './screens/patient.js';
 import './screens/pro.js';
+import './screens/metrics.js';
 
 // Delegação de eventos: botões usam data-a, formulários data-f e campos data-i.
 document.addEventListener('click', (e) => {
@@ -51,7 +52,7 @@ function startParams() {
 const START_SCREENS = {
   patient: ['home', 'areas', 'agenda', 'chats', 'planos', 'config', 'chat', 'perfil', 'pacote'],
   pro: ['painel', 'proagenda', 'horarios', 'chats', 'properfil', 'config', 'chat', 'perfil'],
-  admin: ['admin', 'config'],
+  admin: ['admin', 'metricas', 'config'],
 };
 function openStart(st) {
   if (st.screen === 'crise') { openLayer('crise'); return; }

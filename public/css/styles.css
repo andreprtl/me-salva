@@ -6,7 +6,7 @@
 :root{
   --bg:#FFF9F3; --surface:#FFFFFF; --surface-2:#F4EEE5; --ink:#15302A; --muted:#5B6D67; --line:#E8DFD3;
   --brand:#1E4D40; --on-brand:#FFF9F3; --accent-ink:#1E4D40; --logo:#1E4D40;
-  --teal:#13998A; --on-teal:#FFFFFF; --teal-soft:#D6F1EC; --lav:#6E4FCB; --lav-soft:#EDE7FB;
+  --teal:#13998A; --on-teal:#FFFFFF; --teal-fill:#0E7E71; --teal-soft:#D6F1EC; --lav:#6E4FCB; --lav-soft:#EDE7FB;
   --gold:#E0A01A; --danger:#B9400E; --danger-soft:#FBE6DA;
   --map:#EEE8DD; --road:#FFFFFF; --river:#BDE4DC; --park:#CDE5C5;
   --call:#0C1613; --call-2:#17271F; --call-ink:#EAF4F1;
@@ -21,7 +21,7 @@
 :root.dark{
   --bg:#0E1B18; --surface:#152723; --surface-2:#1B312B; --ink:#E7F1ED; --muted:#9AB0A9; --line:#24403A;
   --brand:#2D7A66; --on-brand:#F3FBF8; --accent-ink:#8FDCC8; --logo:#CDEDE3;
-  --teal:#3CCAB5; --on-teal:#04241F; --teal-soft:#123A34; --lav:#B6A0F7; --lav-soft:#29233F;
+  --teal:#3CCAB5; --on-teal:#04241F; --teal-fill:#3CCAB5; --teal-soft:#123A34; --lav:#B6A0F7; --lav-soft:#29233F;
   --gold:#F2BA42; --danger:#F08E62; --danger-soft:#3A2016;
   --map:#13241F; --road:#203A33; --river:#17483F; --park:#1A3A29;
   --scrim:rgba(0,0,0,.6);
@@ -55,7 +55,7 @@ button,select{font:inherit;color:inherit}
 .nav{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;border:0;background:none;cursor:pointer;color:var(--muted);font-weight:500;text-align:left;position:relative}
 .nav:hover{background:var(--surface-2);color:var(--ink)}
 .nav.on{background:var(--teal-soft);color:var(--accent-ink)}
-.nav .count-b{margin-left:auto;min-width:20px;height:20px;border-radius:10px;background:var(--teal);color:var(--on-teal);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.nav .count-b{margin-left:auto;min-width:20px;height:20px;border-radius:10px;background:var(--teal-fill);color:var(--on-teal);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 6px}
 .side-label{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 12px}
 .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px}
 .side-user{display:flex;gap:10px;align-items:center;padding:10px;border-radius:14px;border:1px solid var(--line);background:none;cursor:pointer;text-align:left;width:100%}
@@ -108,7 +108,7 @@ button,select{font:inherit;color:inherit}
 .btn-primary:hover{filter:brightness(1.08)}
 .btn-ghost{background:var(--surface);color:var(--accent-ink);border:1.5px solid var(--line)}
 .btn-ghost:hover{border-color:var(--teal)}
-.btn-teal{background:var(--teal);color:var(--on-teal)}
+.btn-teal{background:var(--teal-fill);color:var(--on-teal)}
 .btn-lav{background:var(--lav);color:var(--bg)}
 .btn-block{width:100%}
 .btn-sm{min-height:36px;font-size:13px;padding:0 14px;border-radius:11px}
@@ -134,7 +134,7 @@ button,select{font:inherit;color:inherit}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label,.lbl{font-size:12.5px;font-weight:600;color:var(--muted)}
 .input{width:100%;height:46px;border-radius:13px;border:1.5px solid var(--line);background:var(--surface);padding:0 14px;font:inherit;color:var(--ink)}
-.input:focus{outline:none;border-color:var(--teal)}
+.input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
 textarea.input{height:110px;padding:12px 14px;resize:vertical}
 input[type=range]{width:100%;accent-color:var(--teal)}
 .card{background:var(--surface);border-radius:18px;padding:16px;border:1px solid var(--line)}
@@ -325,7 +325,7 @@ button.li:hover{background:var(--surface-2)}
 .slot{height:42px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);font-weight:600;font-size:13.5px;cursor:pointer;position:relative;font-variant-numeric:tabular-nums}
 .slot.soc{border-color:var(--lav)}
 .slot.soc::after{content:"social";position:absolute;top:-7px;right:4px;font-size:9px;font-weight:700;background:var(--lav);color:var(--bg);border-radius:5px;padding:0 4px;line-height:14px}
-.slot.on{background:var(--teal);border-color:var(--teal);color:var(--on-teal)}
+.slot.on{background:var(--teal-fill);border-color:var(--teal-fill);color:var(--on-teal)}
 .slot[disabled]{text-decoration:line-through;opacity:.4;cursor:not-allowed}
 .sum{display:flex;flex-direction:column;gap:8px}
 .sum-r{display:flex;justify-content:space-between;gap:10px;font-size:13.5px}
@@ -376,7 +376,7 @@ button.li:hover{background:var(--surface-2)}
   .split-list .li.on{background:var(--teal-soft)}
 }
 .chat-list .av{width:48px;height:48px}
-.unread{min-width:20px;height:20px;border-radius:10px;background:var(--teal);color:var(--on-teal);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.unread{min-width:20px;height:20px;border-radius:10px;background:var(--teal-fill);color:var(--on-teal);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 6px}
 .chat-head{display:flex;align-items:center;gap:10px;padding:10px 16px;flex:none;border-bottom:1px solid var(--line);background:var(--surface)}
 .msgs{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 @media (min-width:960px){.msgs{padding:18px max(24px,calc((100% - 760px)/2))}}
@@ -576,7 +576,7 @@ select.input{appearance:auto;padding-right:10px}
 .avail th{font-size:11.5px;color:var(--muted);font-weight:600;padding:2px}
 .avail th.h{text-align:right;padding-right:6px;font-variant-numeric:tabular-nums;width:52px}
 .avail td button{width:100%;height:32px;border-radius:9px;border:1.5px solid var(--line);background:var(--bg);cursor:pointer;font-size:11px;color:var(--muted)}
-.avail td button.on{background:var(--teal);border-color:var(--teal);color:var(--on-teal);font-weight:600}
+.avail td button.on{background:var(--teal-fill);border-color:var(--teal-fill);color:var(--on-teal);font-weight:600}
 
 /* ---------- prontuário e administração ---------- */
 .note{border-left:3px solid var(--teal);padding:10px 14px;background:var(--surface-2);border-radius:0 12px 12px 0;display:flex;flex-direction:column;gap:4px;white-space:pre-wrap}
@@ -598,7 +598,7 @@ table.tbl{border-collapse:collapse;width:100%;min-width:560px;font-size:13px}
 
 /* ---------- v1.1: tempo real e notificações ---------- */
 /* Número de não lidas ao lado de "Mensagens" no cabeçalho do computador. */
-.btn-count{min-width:20px;height:20px;border-radius:10px;background:var(--teal);color:var(--on-teal);font-size:11px;font-weight:700;display:inline-grid;place-items:center;padding:0 6px}
+.btn-count{min-width:20px;height:20px;border-radius:10px;background:var(--teal-fill);color:var(--on-teal);font-size:11px;font-weight:700;display:inline-grid;place-items:center;padding:0 6px}
 /* Minhas mensagens: um tique (enviada) ou dois tiques em menta (vista). */
 .tick{display:inline-flex;vertical-align:-3px;margin-left:4px}
 .tick .ic{width:15px;height:15px}
@@ -705,3 +705,63 @@ table.tbl{border-collapse:collapse;width:100%;min-width:560px;font-size:13px}
 .tag .ic{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
 .tag-btn{border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:500}
 .tag-btn:hover{filter:brightness(.97);text-decoration:underline}
+
+/* ---------- painel de métricas (v1.3) ---------- */
+/* Cores das séries dos gráficos, conferidas para daltonismo e contraste em cada tema (claro e escuro). */
+:root{--chart-1:#13998A;--chart-2:#6E4FCB}
+:root.dark{--chart-1:#2AA894;--chart-2:#9479E8}
+.m-filter{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:12px;flex:none}
+.m-filter .seg{flex:0 1 320px}
+.m-stats .stat em.neg{color:var(--muted)}
+.m-stats .stat em.flat{color:var(--muted);font-weight:500}
+.m-note{margin:0}
+.m-grid{display:grid;gap:16px}
+@media (min-width:960px){.m-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+.m-legend{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.m-legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.sw.c1{background:var(--chart-1)}
+.sw.c2{background:var(--chart-2)}
+.m-chart{min-height:190px}
+.m-chart-sm{min-height:150px}
+.m-plot{position:relative;border-radius:10px;touch-action:pan-y}
+.m-plot:focus-visible{outline:2.5px solid var(--teal);outline-offset:4px}
+.m-plot svg{display:block;overflow:visible}
+.m-plot .grid{stroke:var(--line);stroke-width:1}
+.m-plot .ax{fill:var(--muted);font-size:11px;font-family:var(--f-body);font-variant-numeric:tabular-nums}
+.m-plot .mk.c1{fill:var(--chart-1)}
+.m-plot .mk.c2{fill:var(--chart-2)}
+.m-plot .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.m-plot .ln.c1{stroke:var(--chart-1)}
+.m-plot .area.c1{fill:var(--chart-1);opacity:.12}
+.m-plot .hl{fill:var(--surface-2)}
+.m-plot .cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.m-plot .dot{fill:var(--chart-1);stroke:var(--surface);stroke-width:2}
+.m-tip{position:absolute;top:-4px;transform:translateY(-100%);pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:10px;padding:7px 10px;font-size:12px;display:flex;flex-direction:column;gap:1px;white-space:nowrap;z-index:2}
+.m-tip b{font-weight:600}
+.m-tip span{color:var(--muted)}
+.funnel{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.funnel li,.meter{display:flex;flex-direction:column;gap:4px}
+.fn-t{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+.fn-t b{font-family:var(--f-display);font-weight:800;font-size:16px}
+.fn-bar{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden}
+.fn-bar i{display:block;height:100%;border-radius:5px;background:var(--chart-1)}
+.fn-bar.lav i{background:var(--chart-2)}
+.m-table summary{cursor:pointer}
+.m-table[open] summary{margin-bottom:12px}
+.m-table .tbl-wrap{border:0}
+.m-link{display:flex;align-items:center;gap:12px;text-align:left;cursor:pointer;color:var(--ink);font:inherit}
+.m-link>.ic:first-child{color:var(--teal)}
+.m-link b{display:block}
+.m-link:hover{border-color:var(--teal)}
+
+/* ---------- revisão geral (v1.3) ---------- */
+/* Agenda do profissional: mensagem, prontuário e cancelar ficam na linha do nome; Entrar, Realizada e Falta,
+   numa linha embaixo (no celular) ou na mesma linha (no computador). */
+.appt-tools{display:flex;gap:6px;flex:none}
+.appt-tools .icon-btn{width:38px;height:38px}
+.appt-acts{display:flex;align-items:center;gap:6px;flex-basis:100%;flex-wrap:wrap}
+@media (min-width:960px){.appt-acts{flex-basis:auto;order:3}.appt-tools{order:4}}
+/* Grade de horários: no celular, os 7 dias cabem na tela, sem rolagem lateral. */
+@media (max-width:640px){.avail{padding:6px}.avail table{min-width:0;border-spacing:3px}.avail th.h{width:40px;padding-right:2px}.avail td button{font-size:10px;height:30px}}
+@media (max-width:959.98px){.appt-act .btn-sm{padding:0 11px;gap:6px}}

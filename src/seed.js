@@ -79,27 +79,71 @@ function prng(seed) {
   return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
+// Histórico simulado (v1.3). Em vez de sortear um paciente qualquer para cada horário, o seed simula a jornada
+// de cada paciente: cadastro → triagem → perfil visto → reserva → pagamento → sessões no mesmo horário fixo por
+// algumas semanas → saída. Assim os números do painel de métricas (src/metrics.js) saem coerentes entre si:
+// crescimento moderado, sessão média perto de R$ 95, cerca de 8% dos pacientes no Me Salva+ e um funil plausível.
+//
+// Como cada profissional entra na simulação: público ('adult' ou 'family'), peso na escolha, sessões por semana,
+// intervalo em semanas (1 = toda semana, 4 = uma consulta por mês), duração do acompanhamento em semanas
+// [mín, máx] e grow (recém-formados com vagas sociais, cuja procura cresce ao longo dos meses).
+const SIM = {
+  bruno: { seg: 'adult', w: 5, per: 1, every: 1, weeks: [6, 22] },
+  fernanda: { seg: 'adult', w: 4, per: 1, every: 1, weeks: [6, 22] },
+  caio: { seg: 'adult', w: 3, per: 1, every: 1, weeks: [6, 20] },
+  luiz: { seg: 'adult', w: 2, per: 1, every: 1, weeks: [4, 14] },
+  ana: { seg: 'adult', w: 1.5, per: 1, every: 4, weeks: [8, 26] },
+  pedro: { seg: 'adult', w: 2, per: 1, every: 1, weeks: [8, 26] },
+  marina: { seg: 'family', w: 1.5, per: 1, every: 1, weeks: [4, 4] },
+  juliana: { seg: 'family', w: 2, per: 2, every: 1, weeks: [10, 26] },
+  rafael: { seg: 'family', w: 4, per: 2, every: 1, weeks: [10, 26], grow: true },
+  leticia: { seg: 'family', w: 2, per: 1, every: 1, weeks: [8, 22], grow: true },
+  thiago: { seg: 'family', w: 1, per: 1, every: 4, weeks: [8, 26] },
+  camila: { seg: 'family', w: 1, per: 1, every: 1, weeks: [8, 20] },
+};
+// Nomes e sobrenomes para os pacientes gerados (combinações fictícias).
+const FIRST = ['Ana', 'Beatriz', 'Bruna', 'Carolina', 'Daniela', 'Fernanda', 'Gabriela', 'Isabela', 'Juliana', 'Larissa', 'Letícia', 'Luana', 'Mariana', 'Natália', 'Priscila', 'Raquel', 'Sabrina', 'Tânia', 'Viviane', 'Yasmin',
+  'André', 'Bruno', 'Caio', 'Daniel', 'Eduardo', 'Felipe', 'Gabriel', 'Henrique', 'Igor', 'João', 'Leonardo', 'Mateus', 'Nícolas', 'Otávio', 'Paulo', 'Rodrigo', 'Samuel', 'Thiago', 'Vinícius', 'Wagner'];
+const LAST = ['Almeida', 'Araújo', 'Barbosa', 'Cardoso', 'Carvalho', 'Castro', 'Correia', 'Dias', 'Farias', 'Freitas', 'Gomes', 'Lopes', 'Machado', 'Martins', 'Melo', 'Monteiro', 'Moreira', 'Nascimento', 'Pereira', 'Pinto',
+  'Ribeiro', 'Rocha', 'Santana', 'Silva', 'Soares', 'Souza', 'Teixeira', 'Vieira'];
+// Semanas completas de histórico (as mesmas 26 dos gráficos do painel) e dias de agenda futura (os mesmos da busca).
+const HIST_WEEKS = 26;
+const AHEAD_DAYS = 14;
+
 // Cria todos os dados. reset: true apaga as tabelas antes (botão da administração e `npm run seed`).
 export function seedDemo(db, { reset = false, notesKey = null } = {}) {
   const rand = prng(20261022);
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+  const between = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1));
+  const shuffle = (arr) => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
   const now = nowSP();
   const today = now.slice(0, 10);
+  const nowMin = toMinutes(now);
   const pass = hashPassword(DEMO_PASSWORD);
+  // Horário de São Paulo → instante UTC no formato das colunas created_at e paid_at (São Paulo = UTC−3).
+  const utc = (sp) => fromMinutes(toMinutes(sp) + 180) + ':00Z';
+  const later = (sp, min) => fromMinutes(toMinutes(sp) + min);
 
   db.tx(() => {
     if (reset) {
-      for (const t of ['push_subscriptions', 'notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'packages', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
+      for (const t of ['events', 'push_subscriptions', 'notifications', 'reminders', 'sessions', 'audit', 'notes', 'reviews', 'messages', 'payments', 'appointments', 'packages', 'triages', 'availability', 'pros', 'users']) db.run(`DELETE FROM ${t}`);
     }
-    const user = (role, name, email, { bairro = 'Bela Vista', demo = 0, plan = 'free' } = {}) =>
-      db.run('INSERT INTO users(role, name, email, pass_hash, bairro, is_demo, plan) VALUES (?, ?, ?, ?, ?, ?, ?)', role, name, email, pass, bairro, demo ? 1 : 0, plan).lastInsertRowid;
+    // created: instante UTC do cadastro (padrão: agora).
+    const user = (role, name, email, { bairro = 'Bela Vista', demo = 0, plan = 'free', created = null } = {}) =>
+      db.run(`INSERT INTO users(role, name, email, pass_hash, bairro, is_demo, plan, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, strftime('%Y-%m-%dT%H:%M:%SZ','now')))`,
+        role, name, email, pass, bairro, demo ? 1 : 0, plan, created).lastInsertRowid;
     const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '');
+    // Evento do funil (v1.3), gravado direto: no seed não há repetição para descartar.
+    const ev = (kind, userId, proId, refId, at) => db.run('INSERT INTO events(kind, user_id, pro_id, ref_id, at) VALUES (?, ?, ?, ?, ?)', kind, userId, proId, refId, at);
 
     user('admin', 'Equipe Me Salva (administração)', 'admin@demo.mesalva.app', { demo: 1 });
     const mariana = user('patient', 'Mariana Souza', 'mariana@demo.mesalva.app', { demo: 1, bairro: 'Bela Vista' });
     const bairros = ['Pinheiros', 'Mooca', 'Santana', 'Tatuapé', 'Penha', 'Vila Mariana', 'Butantã', 'Lapa', 'Ipiranga', 'Moema'];
-    const adults = ADULTS.map((n, i) => user('patient', n, `${slug(n)}@exemplo.mesalva.app`, { bairro: bairros[i % bairros.length] }));
-    const families = FAMILIES.map((n, i) => user('patient', n, `${slug(n)}@exemplo.mesalva.app`, { bairro: bairros[(i + 3) % bairros.length] }));
+    // Os 20 pacientes com nome fixo já estavam em acompanhamento quando o histórico começa, e continuam.
+    const histStart = addDays(weekStart(today), -HIST_WEEKS * 7);
+    const arrived = (i) => `${addDays(histStart, -10 - 3 * i)}T10:00`;
+    const adults = ADULTS.map((n, i) => user('patient', n, `${slug(n)}@exemplo.mesalva.app`, { bairro: bairros[i % bairros.length], created: utc(arrived(i)) }));
+    const families = FAMILIES.map((n, i) => user('patient', n, `${slug(n)}@exemplo.mesalva.app`, { bairro: bairros[(i + 3) % bairros.length], created: utc(arrived(i + 12)) }));
 
     const ids = {};
     for (const p of PROS) {
@@ -123,62 +167,261 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
       const p = PROS.find((x) => x.key === key);
       return { price: p.price * 100, social_price: p.social ? p.social * 100 : null };
     };
-    // Cria uma sessão já com o pagamento aprovado e os valores calculados por quote().
-    // pkg: sessão de um pacote recorrente (v1.2), paga pelo PIX do pacote, criado em paidDay.
-    const insertAppt = (patient, key, start, status, { modality, social = false, room = null, pkg = null, paidDay = null } = {}) => {
+    // Cria uma sessão com os valores de quote() e o pagamento (aprovado; vencido se a sessão foi cancelada).
+    // Grava também os eventos do funil: reserva e pagamento (as sessões de pacote contam uma vez, pelo pacote)
+    // e sessão realizada. booked: horário de São Paulo da reserva (padrão: 3 dias antes, às 09:00).
+    // pkg: sessão de um pacote recorrente (v1.2), paga pelo PIX do pacote, feito em paidDay.
+    const insertAppt = (patient, key, start, status, { modality, social = false, room = null, pkg = null, paidDay = null, plus = false, booked = null } = {}) => {
       const p = PROS.find((x) => x.key === key);
-      const q = quote({ pro: proOf(key), social: social && p.social, plus: false });
-      const day = paidDay || addDays(start.slice(0, 10), -3);
+      const q = quote({ pro: proOf(key), social: social && p.social, plus });
+      const at = booked || `${paidDay || addDays(start.slice(0, 10), -3)}T09:00`;
       const id = db.run(`INSERT INTO appointments(patient_id, pro_id, package_id, start, modality, social, base_price, amount, fee, pro_amount, status, room, created_at)
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       patient, ids[key], pkg, start, modality || p.modal[0], social && p.social ? 1 : 0, q.base, q.amount, q.fee, q.pro_amount, status,
-      status === 'confirmed' ? room || 'MeSalva-' + randomId(9) : null, `${day}T12:00:00Z`).lastInsertRowid;
-      if (status !== 'cancelled') {
-        db.run(`INSERT INTO payments(user_id, appointment_id, package_id, kind, method, amount, fee, pro_amount, status, card_last4, created_at, paid_at)
-                VALUES (?, ?, ?, 'session', ?, ?, ?, ?, 'paid', ?, ?, ?)`,
-        patient, id, pkg, pkg ? 'pix' : rand() < 0.6 ? 'pix' : 'card', q.amount, q.fee, q.pro_amount, pkg ? null : '4242', `${day}T12:00:00Z`, `${day}T12:05:00Z`);
-      }
+      status === 'confirmed' ? room || 'MeSalva-' + randomId(9) : null, utc(at)).lastInsertRowid;
+      if (!pkg) ev('booking_created', patient, ids[key], id, at);
+      const method = pkg ? 'pix' : rand() < 0.6 ? 'pix' : 'card';
+      db.run(`INSERT INTO payments(user_id, appointment_id, package_id, kind, method, amount, fee, pro_amount, status, card_last4, created_at, paid_at)
+              VALUES (?, ?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      patient, id, pkg, method, q.amount, q.fee, q.pro_amount, status === 'cancelled' ? 'expired' : 'paid', method === 'card' ? '4242' : null, utc(at), status === 'cancelled' ? null : utc(later(at, 5)));
+      if (status !== 'cancelled' && !pkg) ev('payment_confirmed', patient, ids[key], id, later(at, 5));
+      if (status === 'done') ev('session_done', patient, ids[key], id, later(start, 50));
       return id;
     };
+    // O horário ainda está livre para o profissional? Evita violar o índice único de horários.
+    const free = (key, start) => !db.get("SELECT 1 FROM appointments WHERE pro_id = ? AND start = ? AND status <> 'cancelled'", ids[key], start);
 
-    // Histórico dos últimos 6 meses (sessões realizadas e algumas faltas) para alimentar painéis e notas.
-    for (const p of PROS) {
-      const pool = p.audience.includes('Adultos') ? adults : families;
-      const done = [];
-      for (let back = 182; back >= 1; back--) {
-        const day = addDays(today, -back);
-        const wd = weekday(day);
-        // Ocupação crescente do Rafael (recém-formado) graças às vagas sociais: ~22% → ~68%.
-        const occ = p.key === 'rafael' ? 0.22 + (182 - back) / 182 * 0.46 : 0.3;
-        for (const t of p.hours.filter((h) => h.weekday === wd)) {
-          if (rand() > occ) continue;
-          const status = rand() < 0.05 ? 'no_show' : 'done';
-          const social = Boolean(p.social) && rand() < 0.4;
-          const id = insertAppt(pick(pool), p.key, `${day}T${t.hour}`, status, { social, modality: pick(p.modal) });
-          if (status === 'done') done.push({ id, start: `${day}T${t.hour}` });
+    // ---------- Cenas fixas da demonstração (horários guardados antes de simular o histórico) ----------
+    // Sessão online da Mariana com a Fernanda numa hora cheia entre 1h30 e 2h30 depois de restaurar os dados
+    // (entre 08:00 e 23:00 do mesmo dia). Serve para demonstrar a sala de vídeo (aberta o dia todo no modo demo)
+    // e o lembrete de 1 h, que chega às duas contas em tempo real: sozinho, só depois de pelo menos 30 minutos,
+    // ou na hora, pelo botão "Disparar lembretes agora" da administração.
+    let sessionToday = fromMinutes(Math.ceil((nowMin + 90) / 60) * 60);
+    if (sessionToday.slice(0, 10) !== today) sessionToday = `${today}T23:00`;
+    if (sessionToday < `${today}T08:00`) sessionToday = `${today}T08:00`;
+    const julDay = addDays(today, 3);
+    // Pacote recorrente da Mariana com o Rafael (v1.2): seg e qua às 08:00, começado na segunda de duas semanas atrás.
+    const pkgStart = `${addDays(weekStart(today), -14)}T08:00`;
+    const pkgDays = [1, 3];
+    // Conflito para o agendamento recorrente: quem montar "ter e qui às 15:00" a partir da próxima terça encontra
+    // a quinta da semana seguinte já reservada por outra família.
+    const nextTue = addDays(today, ((2 - weekday(today) + 7) % 7) || 7);
+    const conflictAt = `${addDays(nextTue, 9)}T15:00`;
+    const reserved = new Set([
+      `bruno|${addDays(today, -13)}T18:00`, `bruno|${addDays(today, -6)}T18:00`, `fernanda|${sessionToday}`, `juliana|${julDay}T10:00`,
+      ...['09:00', '14:00', '17:00'].map((h) => `rafael|${today}T${h}`), `rafael|${conflictAt}`,
+      ...occurrences({ start: pkgStart, weekdays: pkgDays, weeks: 8 }).map((s) => `rafael|${s}`),
+    ]);
+    // Na agenda futura do Rafael ficam livres: as terças e quintas das 14:00 às 16:00 (só o conflito acima ocupa)
+    // e as vagas sociais de segunda às 09:00, 10:00 e 14:00, para a triagem TEA/ABA da Mariana indicá-lo com
+    // horário social de R$ 45 (é a cena do Reels e do pitch).
+    for (let i = 0; i <= AHEAD_DAYS; i++) {
+      const d = addDays(today, i);
+      if ([2, 4].includes(weekday(d))) for (const h of ['14:00', '15:00', '16:00']) reserved.add(`rafael|${d}T${h}`);
+      if (weekday(d) === 1) for (const h of ['09:00', '10:00', '14:00']) reserved.add(`rafael|${d}T${h}`);
+    }
+
+    // ---------- Histórico simulado: 26 semanas completas, a semana atual e 14 dias de agenda futura ----------
+    const horizon = `${addDays(today, AHEAD_DAYS)}T23:59`;
+    const taken = new Set(reserved);
+    const byKey = Object.fromEntries(PROS.map((p) => [p.key, p]));
+    const fixedSocial = Object.fromEntries(PROS.map((p) => [p.key, socialKeys({ is_new: p.isNew ? 1 : 0, supervisor: p.supervisor, social_price: p.social ? p.social * 100 : null, social_weekly: p.socialWeekly }, p.hours)]));
+    // Horários fixos possíveis com um profissional: um por semana, ou dois dias no mesmo horário (ex.: seg e qua, 09:00).
+    const options = (key) => {
+      const hours = byKey[key].hours;
+      if (SIM[key].per === 1) return hours.map((h) => [h]);
+      return hours.flatMap((a) => hours.filter((b) => b.hour === a.hour && b.weekday - a.weekday >= 2).map((b) => [a, b]));
+    };
+    // Datas das sessões a partir de firstDay, nos dias do horário fixo, por `weeks` semanas, até o fim da agenda futura.
+    const datesFor = (slots, firstDay, weeks, every) => {
+      const out = [];
+      const ws = weekStart(firstDay);
+      for (let w = 0; w < weeks; w += every) {
+        for (const s of slots) {
+          const day = addDays(ws, 7 * w + (s.weekday === 0 ? 6 : s.weekday - 1));
+          const start = `${day}T${s.hour}`;
+          if (day >= firstDay && start <= horizon) out.push(start);
         }
       }
-      done.sort((a, b) => b.start.localeCompare(a.start));
-      // Avaliações com comentário nas sessões mais recentes; as demais só com nota.
+      return out.sort();
+    };
+    // Escolhe o profissional pelo peso (t vai de 0, no início do histórico, a 1, hoje).
+    const weightOf = (key, t) => SIM[key].w * (SIM[key].grow ? 0.25 + 1.6 * t : 1);
+    const choosePro = (seg, t, skip = new Set()) => {
+      const keys = Object.keys(SIM).filter((k) => SIM[k].seg === seg && !skip.has(k));
+      let x = rand() * keys.reduce((s, k) => s + weightOf(k, t), 0);
+      for (const k of keys) { x -= weightOf(k, t); if (x <= 0) return k; }
+      return keys.at(-1);
+    };
+    // Encaixa um paciente: um profissional e um horário fixo em que todas as datas estão livres (até 4 tentativas).
+    // early: para logo no começo; long: segue em acompanhamento até hoje; forced: profissional definido.
+    const place = (seg, t, firstDay, { early = false, long = false, forced = null } = {}) => {
+      const tried = new Set();
+      for (let k = 0; k < 4; k++) {
+        const key = forced || choosePro(seg, t, tried);
+        tried.add(key);
+        const sim = SIM[key];
+        // 1 em 5 para logo no começo (uma ou duas semanas), como acontece na terapia.
+        const weeks = long ? HIST_WEEKS + 4 : early ? between(1, 2) * sim.every : between(sim.weeks[0], sim.weeks[1]);
+        // Famílias preferem os horários de vaga social (mais baratos), quando o profissional oferece.
+        const opts = shuffle(options(key));
+        const social = (slots) => slots.some((x) => fixedSocial[key].has(`${x.weekday}|${x.hour}`));
+        if (fixedSocial[key].size && rand() < 0.85) opts.sort((a, b) => social(b) - social(a));
+        for (const slots of opts) {
+          const all = datesFor(slots, firstDay, weeks, sim.every);
+          // Um horário guardado para a demonstração encerra o acompanhamento antes dele (o paciente teve alta);
+          // um horário de outro paciente descarta a opção. Quem segue até hoje (long) precisa de todas as datas.
+          const cut = all.findIndex((d) => reserved.has(`${key}|${d}`));
+          if (long && cut !== -1) continue;
+          const dates = cut === -1 ? all : all.slice(0, cut);
+          if (dates.length >= (early ? 1 : Math.min(3, all.length)) && dates.every((d) => !taken.has(`${key}|${d}`))) {
+            dates.forEach((d) => taken.add(`${key}|${d}`));
+            return { key, slots, dates, modality: pick(byKey[key].modal) };
+          }
+        }
+        if (forced) break;
+      }
+      return null;
+    };
+
+    const plans = [];
+    // Pacientes com nome: Carla, Roberto e Tatiane são famílias atendidas pelo Rafael (têm sessão com ele hoje).
+    const named = [...adults.map((id) => [id, 'adult', null]), ...families.map((id, i) => [id, 'family', i < 3 ? 'rafael' : null])];
+    named.forEach(([id, seg, forced], i) => {
+      const at = arrived(i);
+      ev('triage_started', id, null, null, at);
+      ev('triage_done', id, null, null, later(at, 4));
+      const plan = place(seg, 0, histStart, { long: true, forced }) || place(seg, 0, histStart, { long: true });
+      if (!plan) return;
+      ev('profile_view', id, ids[plan.key], null, later(at, 7));
+      plans.push({ id, ...plan, booked: later(at, 12), paid: true, named: true });
+    });
+    // Outros 18 pacientes que já estavam em acompanhamento no começo do histórico (cadastro e funil antes dele).
+    for (let i = 0; i < 18; i++) {
+      const seg = rand() < 0.4 ? 'family' : 'adult';
+      const name = `${pick(FIRST)} ${pick(LAST)}`;
+      const at = `${addDays(histStart, -between(7, 90))}T${String(between(8, 21)).padStart(2, '0')}:15`;
+      const id = user('patient', name, `${slug(name)}.0${i}@exemplo.mesalva.app`, { bairro: pick(bairros), created: utc(at) });
+      const plan = place(seg, 0, histStart);
+      if (!plan) continue;
+      ev('triage_started', id, null, null, at);
+      ev('triage_done', id, null, null, later(at, 5));
+      ev('profile_view', id, ids[plan.key], null, later(at, 8));
+      plans.push({ id, ...plan, booked: later(at, 12), paid: true });
+    }
+    // Novos cadastros por semana: de cerca de 6 no começo a cerca de 13 agora.
+    let serial = 0;
+    for (let w = 0; w <= HIST_WEEKS; w++) {
+      const t = w / HIST_WEEKS;
+      const n = Math.max(2, Math.round(6 + 7 * t + (rand() - 0.5) * 4));
+      for (let i = 0; i < n; i++) {
+        const day = addDays(histStart, 7 * w + between(0, 6));
+        const at = `${day}T${String(between(7, 22)).padStart(2, '0')}:${String(between(0, 59)).padStart(2, '0')}`;
+        if (at > now) continue;
+        const seg = rand() < 0.4 ? 'family' : 'adult';
+        const name = `${pick(FIRST)} ${pick(LAST)}`;
+        serial += 1;
+        const id = user('patient', name, `${slug(name)}.${serial}@exemplo.mesalva.app`, { bairro: pick(bairros), created: utc(at) });
+        // Funil: 3 em 4 começam pela triagem; os outros vão direto à busca.
+        const viaTriage = rand() < 0.75;
+        let step = at;
+        if (viaTriage) {
+          ev('triage_started', id, null, null, step);
+          if (rand() > 0.85) continue; // desistiu no meio da triagem
+          step = later(step, between(3, 7));
+          ev('triage_done', id, null, null, step);
+        }
+        if (rand() > (viaTriage ? 0.85 : 0.9)) continue; // não abriu nenhum perfil
+        step = later(step, between(1, 4));
+        const books = rand() < (viaTriage ? 0.62 : 0.5);
+        const paid = rand() < 0.93;
+        const plan = books ? place(seg, t, addDays(day, between(2, 6)), { early: rand() < 0.2 }) : null;
+        ev('profile_view', id, ids[plan?.key || choosePro(seg, t)], null, step);
+        if (!plan) continue;
+        if (!paid) {
+          // Reservou e não pagou a tempo: o horário volta a ficar livre.
+          plan.dates.forEach((d) => taken.delete(`${plan.key}|${d}`));
+          plan.dates = plan.dates.slice(0, 1);
+        }
+        plans.push({ id, ...plan, booked: later(step, between(3, 9)), paid, t });
+      }
+    }
+
+    // Me Salva+: cerca de 8,5% dos pacientes com sessão nos últimos 30 dias, escolhidos entre os que continuam em
+    // acompanhamento (com nome fixo, nenhum: os testes contam com o plano gratuito deles).
+    const monthAgo = `${addDays(today, -29)}T00:00`;
+    const active30 = plans.filter((p) => p.paid && p.dates.some((d) => d >= monthAgo && d <= now)).length;
+    const continuing = shuffle(plans.filter((p) => p.paid && !p.named && p.dates.at(-1) >= today && p.dates[0] < today));
+    for (const p of continuing.slice(0, Math.round(active30 * 0.085))) {
+      const since = [p.dates[0].slice(0, 10), addDays(today, -between(14, 120))].sort().at(-1);
+      p.plusFrom = since;
+      db.run("UPDATE users SET plan = 'plus', plan_since = ? WHERE id = ?", utc(`${since}T10:00`), p.id);
+      for (let d = since; d <= today; d = addDays(d, 30)) {
+        db.run(`INSERT INTO payments(user_id, kind, method, amount, fee, status, card_last4, created_at, paid_at) VALUES (?, 'plus', 'card', 1990, 1990, 'paid', '4242', ?, ?)`,
+          p.id, utc(`${d}T10:00`), utc(`${d}T10:01`));
+      }
+    }
+
+    // Pacotes recorrentes: 7 em cada 10 famílias com duas sessões por semana passaram a pagar 8 semanas de uma vez
+    // nas últimas semanas (v1.2). As sessões continuam sendo linhas de appointments, ligadas ao pacote.
+    const pkgWindow = addDays(today, -49);
+    for (const p of plans) {
+      if (!p.paid || SIM[p.key].per < 2 || p.named || rand() > 0.7) continue;
+      const first = p.dates.find((d) => d.slice(0, 10) >= pkgWindow);
+      if (!first) continue;
+      const end = `${addDays(weekStart(first.slice(0, 10)), 56)}T00:00`;
+      const inPkg = p.dates.filter((d) => d >= first && d < end);
+      if (inPkg.length < 6) continue;
+      const paidDay = addDays(first.slice(0, 10), -3);
+      const weekdays = [...new Set(p.slots.map((s) => s.weekday))].sort();
+      p.pkg = { from: first, to: end, paidDay, id: db.run(`INSERT INTO packages(patient_id, pro_id, weekdays, time, weeks, modality, amount, status, paid_at, created_at)
+                VALUES (?, ?, ?, ?, 8, ?, 0, 'paid', ?, ?)`, p.id, ids[p.key], JSON.stringify(weekdays), p.slots[0].hour, p.modality, utc(`${paidDay}T09:05`), utc(`${paidDay}T09:00`)).lastInsertRowid };
+      ev('booking_created', p.id, ids[p.key], p.pkg.id, `${paidDay}T09:00`);
+      ev('payment_confirmed', p.id, ids[p.key], p.pkg.id, `${paidDay}T09:05`);
+    }
+
+    // Grava as sessões: as que já terminaram ficam realizadas (4,5% de faltas), as próximas, confirmadas.
+    // Em 5% das semanas o paciente não marcou (viagem, doença). Carla, Roberto e Tatiane têm a sessão de hoje à parte.
+    const todayFixed = new Set(families.slice(0, 3));
+    for (const p of plans) {
+      p.dates.forEach((start, i) => {
+        if (i > 0 && rand() < 0.05) return;
+        if (todayFixed.has(p.id) && start.startsWith(today)) return;
+        const status = !p.paid ? 'cancelled' : toMinutes(start) + 50 <= nowMin ? (rand() < 0.045 ? 'no_show' : 'done') : 'confirmed';
+        const inPkg = p.pkg && start >= p.pkg.from && start < p.pkg.to;
+        insertAppt(p.id, p.key, start, status, {
+          modality: p.modality, social: fixedSocial[p.key].has(`${weekday(start.slice(0, 10))}|${start.slice(11, 16)}`),
+          plus: Boolean(p.plusFrom && start.slice(0, 10) >= p.plusFrom), pkg: inPkg ? p.pkg.id : null, paidDay: inPkg ? p.pkg.paidDay : null,
+          booked: i === 0 ? p.booked : null,
+        });
+      });
+    }
+    for (const p of plans) if (p.pkg) db.run('UPDATE packages SET amount = (SELECT COALESCE(SUM(amount), 0) FROM appointments WHERE package_id = ?) WHERE id = ?', p.pkg.id, p.pkg.id);
+
+    // Avaliações: as comentadas (de cada perfil) nas sessões realizadas mais recentes; as demais só com nota,
+    // numa proporção de notas 5, 4 (e algumas 3) que chega perto da média definida para o perfil.
+    for (const p of PROS) {
+      const done = db.all("SELECT id, start FROM appointments WHERE pro_id = ? AND status = 'done' ORDER BY start DESC", ids[p.key]);
       const reviewAt = (appt, label, rating, text, tags) => {
         const a = db.get('SELECT * FROM appointments WHERE id = ?', appt.id);
         db.run('INSERT INTO reviews(appointment_id, patient_id, pro_id, rating, tags, text, author_label, modality, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           a.id, a.patient_id, a.pro_id, rating, JSON.stringify(tags), text, label, a.modality, `${appt.start.slice(0, 10)}T22:00:00Z`);
+        ev('review_sent', a.patient_id, a.pro_id, a.id, `${appt.start.slice(0, 10)}T19:00`);
       };
       p.reviews.forEach(([label, rating, text, tags], i) => done[i * 2] && reviewAt(done[i * 2], label, rating, text, tags));
-      const extra = Math.min(p.n, done.length - p.reviews.length * 2);
-      const p5 = Math.max(0.3, Math.min(0.95, p.rating - 4));
+      // As só com nota ficam espalhadas pelo histórico, com as notas intercaladas.
+      const rest = done.slice(p.reviews.length * 2 + 1);
+      const extra = Math.min(p.n, Math.floor(rest.length * 0.6));
+      const threes = p.rating < 4.8 ? Math.floor(extra / 25) : 0;
+      const p5 = Math.max(0.3, Math.min(0.95, p.rating - 4 + threes / Math.max(1, extra)));
+      const gap = extra ? rest.length / extra : 1;
       for (let i = 0; i < extra; i++) {
-        const appt = done[p.reviews.length * 2 + 1 + i];
-        if (!appt) break;
-        // Proporção fixa de notas 5 e 4 para chegar perto da média definida para o perfil.
-        reviewAt(appt, 'Anônimo', i < Math.round(extra * p5) ? 5 : 4, '', []);
+        const three = threes && i % Math.floor(extra / threes) === Math.floor(extra / threes / 2) && i / Math.floor(extra / threes) < threes;
+        reviewAt(rest[Math.floor(i * gap)], 'Anônimo', three ? 3 : Math.floor((i + 1) * p5) > Math.floor(i * p5) ? 5 : 4, '', []);
       }
     }
 
     // Rafael: três atendimentos hoje para aparecerem no painel.
-    // O horário ainda está livre para o profissional? Evita violar o índice único de horários.
-    const free = (key, start) => !db.get("SELECT 1 FROM appointments WHERE pro_id = ? AND start = ? AND status <> 'cancelled'", ids[key], start);
     const [carla, roberto, tatiane] = families;
     for (const [pt, h, social, modality] of [[carla, '09:00', true, 'presencial'], [tatiane, '14:00', false, 'online'], [roberto, '17:00', true, 'presencial']]) {
       if (free('rafael', `${today}T${h}`)) insertAppt(pt, 'rafael', `${today}T${h}`, 'confirmed', { social, modality });
@@ -192,18 +435,16 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     db.run('INSERT INTO messages(patient_id, pro_id, sender_id, kind, body, read_by_patient, read_by_pro, created_at) VALUES (?, ?, ?, ?, ?, 1, 0, ?)',
       carla, ids.rafael, carla, 'text', 'Bom dia, Rafael! O Theo dormiu mal hoje, pode ser que chegue mais agitado.', `${today}T10:40:00Z`);
 
-    // Mariana (paciente de demonstração).
-    // Sessão online da Mariana com a Fernanda numa hora cheia entre 1h30 e 2h30 depois de restaurar os dados
-    // (entre 08:00 e 23:00 do mesmo dia). Serve para demonstrar a sala de vídeo (aberta o dia todo no modo demo)
-    // e o lembrete de 1 h, que chega às duas contas em tempo real: sozinho, só depois de pelo menos 30 minutos,
-    // ou na hora, pelo botão "Disparar lembretes agora" da administração.
-    let sessionToday = fromMinutes(Math.ceil((toMinutes(now) + 90) / 60) * 60);
-    if (sessionToday.slice(0, 10) !== today) sessionToday = `${today}T23:00`;
-    if (sessionToday < `${today}T08:00`) sessionToday = `${today}T08:00`;
-    // Libera horários que o histórico aleatório possa ter ocupado antes de criar as sessões fixas da Mariana.
+    // Mariana (paciente de demonstração): sessões com o Bruno, a de hoje com a Fernanda, a Juliana daqui a 3 dias
+    // e o pacote com o Rafael (os horários foram guardados antes do histórico; ver "Cenas fixas").
+    // Por segurança, libera um horário que o histórico tenha ocupado (com os horários guardados, não deveria acontecer).
     const clearSlot = (key, start) => {
       const old = db.all("SELECT id FROM appointments WHERE pro_id = ? AND start = ?", ids[key], start);
-      for (const o of old) { db.run('DELETE FROM reviews WHERE appointment_id = ?', o.id); db.run('DELETE FROM payments WHERE appointment_id = ?', o.id); db.run('DELETE FROM appointments WHERE id = ?', o.id); }
+      for (const o of old) {
+        db.run('DELETE FROM reviews WHERE appointment_id = ?', o.id); db.run('DELETE FROM payments WHERE appointment_id = ?', o.id);
+        db.run("DELETE FROM events WHERE ref_id = ? AND pro_id = ? AND kind IN ('booking_created','payment_confirmed','session_done','review_sent')", o.id, ids[key]);
+        db.run('DELETE FROM appointments WHERE id = ?', o.id);
+      }
     };
     clearSlot('bruno', `${addDays(today, -13)}T18:00`);
     clearSlot('bruno', `${addDays(today, -6)}T18:00`);
@@ -212,7 +453,6 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     db.run('INSERT INTO reviews(appointment_id, patient_id, pro_id, rating, tags, text, author_label, modality, created_at) VALUES (?, ?, ?, 5, ?, ?, ?, ?, ?)',
       p1, mariana, ids.bruno, '["Acolhimento","Explicações claras"]', 'Comecei por causa do estresse no trabalho e já sinto diferença no sono.', 'Mariana S.', 'online', `${addDays(today, -13)}T22:00:00Z`);
     if (free('fernanda', sessionToday)) insertAppt(mariana, 'fernanda', sessionToday, 'confirmed', { modality: 'online' });
-    const julDay = addDays(today, 3);
     if (free('juliana', `${julDay}T10:00`)) insertAppt(mariana, 'juliana', `${julDay}T10:00`, 'confirmed', { modality: 'presencial' });
 
     // Pacote recorrente da Mariana com o Rafael (v1.2): seg e qua às 08:00, presencial (em casa), por 8 semanas,
@@ -220,8 +460,6 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
     // confirmadas. A segunda às 08:00 é vaga social do Rafael (R$ 45); a quarta, valor normal (R$ 90).
     const rafael = PROS.find((x) => x.key === 'rafael');
     const rafaelSocial = socialKeys({ is_new: 1, supervisor: rafael.supervisor, social_price: rafael.social * 100, social_weekly: rafael.socialWeekly }, rafael.hours);
-    const pkgStart = `${addDays(weekStart(today), -14)}T08:00`;
-    const pkgDays = [1, 3];
     const marianaBusy = () => db.all("SELECT start FROM appointments WHERE patient_id = ? AND status IN ('confirmed','pending_payment','done')", mariana).map((r) => r.start);
     const pkgDates = occurrences({ start: pkgStart, weekdays: pkgDays, weeks: 8 }).filter((st) => !marianaBusy().some((b) => overlaps(b, st)));
     const pkgPaid = addDays(pkgStart.slice(0, 10), -3);
@@ -233,28 +471,14 @@ export function seedDemo(db, { reset = false, notesKey = null } = {}) {
       insertAppt(mariana, 'rafael', st, st < now ? 'done' : 'confirmed', { modality: 'presencial', social, pkg, paidDay: pkgPaid });
     }
     db.run("UPDATE packages SET amount = (SELECT COALESCE(SUM(amount), 0) FROM appointments WHERE package_id = ?) WHERE id = ?", pkg, pkg);
+    ev('booking_created', mariana, ids.rafael, pkg, `${pkgPaid}T09:00`);
+    ev('payment_confirmed', mariana, ids.rafael, pkg, `${pkgPaid}T09:05`);
+    // A Mariana chegou pela triagem TEA/ABA, três semanas antes do pacote.
+    ev('triage_started', mariana, null, null, `${addDays(pkgPaid, -21)}T21:10`);
+    ev('triage_done', mariana, null, null, `${addDays(pkgPaid, -21)}T21:14`);
 
-    // Para demonstrar o agendamento recorrente com conflito: as terças e quintas do Rafael das 14:00 às 16:00 ficam
-    // livres nas próximas semanas, menos a quinta da semana seguinte à próxima terça, às 15:00, já reservada por
-    // outra família. Quem montar "ter e qui às 15:00" a partir da próxima terça vê esse conflito e a sugestão
-    // de 14:00 no mesmo dia.
-    const nextTue = addDays(today, ((2 - weekday(today) + 7) % 7) || 7);
-    const demoKeep = (key, day, hour) => key === 'rafael' && [2, 4].includes(weekday(day)) && ['14:00', '15:00', '16:00'].includes(hour);
-    const conflictAt = `${addDays(nextTue, 9)}T15:00`;
+    // Conflito do agendamento recorrente (ver "Cenas fixas"): a quinta às 15:00, já reservada por outra família.
     if (free('rafael', conflictAt)) insertAppt(families[4], 'rafael', conflictAt, 'confirmed', { modality: 'presencial' });
-
-    // Agenda futura: alguns horários já reservados por outras famílias e pacientes.
-    for (const p of PROS) {
-      const pool = p.audience.includes('Adultos') ? adults : families;
-      for (let i = 0; i < 14; i++) {
-        const day = addDays(today, i);
-        for (const t of p.hours.filter((h) => h.weekday === weekday(day))) {
-          if (`${day}T${t.hour}` <= now || !free(p.key, `${day}T${t.hour}`) || demoKeep(p.key, day, t.hour)) continue;
-          if (rand() < (p.key === 'rafael' ? 0.35 : 0.25)) insertAppt(pick(pool), p.key, `${day}T${t.hour}`, 'confirmed', { modality: pick(p.modal), social: Boolean(p.social) && rand() < 0.5 });
-        }
-      }
-    }
-
 
     // Mensagem de chat criada minutesAgo minutos atrás.
     const msg = (patient, key, sender, kind, body, minutesAgo, read = 1) => {

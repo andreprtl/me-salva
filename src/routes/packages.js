@@ -115,6 +115,8 @@ export default function packageRoutes(r, { db, svc }) {
       }
       const txid = `MSP${pkgId}${randomId(4)}`.replace(/[^A-Za-z0-9]/g, '');
       db.run('UPDATE packages SET pix_code = ? WHERE id = ?', pixCode({ amountCents: total, txid }), pkgId);
+      // Funil (v1.3): um pacote conta como uma reserva (ref_id = pacote), não uma por sessão.
+      svc.track('booking_created', { user_id: req.user.id, pro_id: p.id, ref_id: pkgId });
       return pkgId;
     });
     return { package_id: id, ...detail(id, req.user), hold_minutes: HOLD_MIN };
@@ -160,6 +162,7 @@ export default function packageRoutes(r, { db, svc }) {
       db.run("UPDATE payments SET status = 'paid', paid_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE package_id = ? AND status = 'pending'", id);
       for (const a of appts) db.run("UPDATE appointments SET status = 'confirmed', expires_at = NULL, room = ? WHERE id = ?", 'MeSalva-' + randomId(9), a.id);
       db.run("UPDATE packages SET status = 'paid', expires_at = NULL, paid_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", id);
+      svc.track('payment_confirmed', { user_id: pk.patient_id, pro_id: pk.pro_id, ref_id: id });
       const v = svc.packageView(pk);
       const [first, last] = [appts[0], appts.at(-1)];
       const where = pk.modality === 'online' ? 'online, pela sala segura da plataforma' : 'presencial';

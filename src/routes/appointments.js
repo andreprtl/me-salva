@@ -42,6 +42,7 @@ export default function appointmentRoutes(r, { db, config, svc }) {
       const a = getAppt(pay.appointment_id);
       db.run("UPDATE payments SET status = 'paid', paid_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?", pay.id);
       db.run("UPDATE appointments SET status = 'confirmed', expires_at = NULL, room = ? WHERE id = ?", 'MeSalva-' + randomId(9), a.id);
+      svc.track('payment_confirmed', { user_id: a.patient_id, pro_id: a.pro_id, ref_id: a.id });
       const where = a.modality === 'online' ? 'online, pela sala segura da plataforma' : 'presencial';
       svc.pushMessage({ patient_id: a.patient_id, pro_id: a.pro_id, kind: 'system', body: `Sessão confirmada para ${fmtDay(a.start)} (${where}).` });
       const n = names(a);
@@ -114,6 +115,7 @@ export default function appointmentRoutes(r, { db, config, svc }) {
       const payId = db.run(`INSERT INTO payments(user_id, appointment_id, kind, method, amount, fee, pro_amount, status, pix_code)
                             VALUES (?, ?, 'session', ?, ?, ?, ?, 'pending', ?)`,
       req.user.id, apptId, method, qt.amount, qt.fee, qt.pro_amount, method === 'pix' ? pixCode({ amountCents: qt.amount, txid }) : null).lastInsertRowid;
+      svc.track('booking_created', { user_id: req.user.id, pro_id: p.id, ref_id: apptId });
       return { apptId, payId };
     });
     return { appointment_id: ids.apptId, payment: db.get('SELECT * FROM payments WHERE id = ?', ids.payId), hold_minutes: HOLD_MIN };
@@ -230,7 +232,10 @@ export default function appointmentRoutes(r, { db, config, svc }) {
     if (a.status === 'done') return { appointment: a };
     if (a.status !== 'confirmed') throw bad('Só é possível encerrar sessões confirmadas.');
     if (!config.demoMode && toMinutes(nowSP()) < toMinutes(a.start)) throw bad('A sessão ainda não começou.');
-    db.run("UPDATE appointments SET status = 'done' WHERE id = ?", a.id);
+    db.tx(() => {
+      db.run("UPDATE appointments SET status = 'done' WHERE id = ?", a.id);
+      svc.track('session_done', { user_id: a.patient_id, pro_id: a.pro_id, ref_id: a.id });
+    });
     return { appointment: getAppt(a.id) };
   });
 
@@ -259,6 +264,7 @@ export default function appointmentRoutes(r, { db, config, svc }) {
     db.tx(() => {
       db.run('INSERT INTO reviews(appointment_id, patient_id, pro_id, rating, tags, text, author_label, modality) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         a.id, req.user.id, a.pro_id, rating, JSON.stringify(tags), text, label, a.modality);
+      svc.track('review_sent', { user_id: req.user.id, pro_id: a.pro_id, ref_id: a.id });
       svc.notify(a.pro_id, { kind: 'review', title: 'Nova avaliação', body: `${label} avaliou a sessão com ${rating} ${rating === 1 ? 'estrela' : 'estrelas'}.`, screen: 'perfil', param: String(a.pro_id) });
     });
     return { ok: true, pro: svc.getPro(a.pro_id) };

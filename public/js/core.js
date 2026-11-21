@@ -132,7 +132,7 @@ const parseParam = (v) => (/^\d+$/.test(v) ? Number(v) : v);
 const NAV = {
   patient: [['home', 'home', 'Início', 'Início'], ['areas', 'search', 'Buscar profissionais', 'Buscar'], ['agenda', 'cal', 'Minha agenda', 'Agenda'], ['chats', 'chat', 'Mensagens', 'Mensagens'], ['planos', 'crown', 'Planos', null], ['config', 'sliders', 'Configurações', 'Config.']],
   pro: [['painel', 'chart', 'Painel', 'Painel'], ['proagenda', 'cal', 'Agenda', 'Agenda'], ['horarios', 'clock', 'Horários e vagas sociais', 'Horários'], ['chats', 'chat', 'Mensagens', 'Mensagens'], ['properfil', 'user', 'Meu perfil', null], ['config', 'sliders', 'Configurações', 'Config.']],
-  admin: [['admin', 'shield', 'Administração', 'Admin'], ['config', 'sliders', 'Configurações', 'Config.']],
+  admin: [['admin', 'shield', 'Administração', 'Admin'], ['metricas', 'chart', 'Métricas do negócio', 'Métricas'], ['config', 'sliders', 'Configurações', 'Config.']],
 };
 // Desenha a barra lateral (computador) e as abas inferiores (celular) conforme o perfil.
 function paintShell(t, def) {
@@ -361,6 +361,15 @@ export function qrSvg(seed) {
   return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="QR Code ilustrativo"><g fill="var(--qr)">${r}</g>${finder(0, 0)}${finder(18, 0)}${finder(0, 18)}</svg>`;
 }
 export const backBtn = () => `<button class="icon-btn" data-a="back" aria-label="Voltar">${ic('chevL')}</button>`;
+// Título e abordagem numa linha só, sem repetir a abordagem que já está no título:
+// 'Psicólogo · ABA' + 'ABA' → 'Psicólogo · ABA' (antes saía 'Psicólogo · ABA · ABA'); 'Psicóloga' + 'TCC' → 'Psicóloga · TCC'.
+export function proLine(title, approach) {
+  const parts = String(title || '').split(' · ');
+  const a = String(approach || '').trim();
+  if (!a) return parts.join(' · ');
+  if (parts.length > 1 && parts.at(-1).trim().toLowerCase() === a.split(/\s[–-]\s/)[0].trim().toLowerCase()) parts.pop();
+  return `${parts.join(' · ')} · ${a}`;
+}
 export const areaName = (id) => S.meta?.areas.find((a) => a.id === id)?.nome || 'Todos os profissionais';
 export const chipCheck = (name, value, label, checked) => `<label class="chip-check"><input type="checkbox" name="${esc(name)}" value="${esc(value)}" ${checked ? 'checked' : ''}><span>${esc(label)}</span></label>`;
 export const toggle = (action, on, label, extra = '') => `<button class="toggle ${on ? 'on' : ''}" data-a="${action}" ${extra} role="switch" aria-checked="${Boolean(on)}" aria-label="${esc(label)}"></button>`;

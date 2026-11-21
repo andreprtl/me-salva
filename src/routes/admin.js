@@ -5,13 +5,17 @@ import { nowSP } from '../time.js';
 import { oneOf, bad } from '../validate.js';
 import { seedDemo } from '../seed.js';
 import { DEMO_AHEAD_MIN } from '../reminders.js';
+import { kpis } from '../metrics.js';
 
 export default function adminRoutes(r, { db, config, svc, hub, reminders, notesKey }) {
   const onlyAdmin = requireRole('admin');
 
-  // Indicadores do mês e a fila de profissionais aguardando verificação.
+  // Indicadores do mês e a fila de profissionais aguardando verificação. Os números do mês seguem as mesmas
+  // definições do painel de métricas (src/metrics.js): sessões realizadas e a receita delas, do dia 1 até agora.
   r.get('/api/admin/overview', onlyAdmin, () => {
-    const month = nowSP().slice(0, 7);
+    const now = nowSP();
+    const month = now.slice(0, 7);
+    const k = kpis(db, `${month}-01T00:00`, `${now}~`);
     // Atalho para consultas que devolvem um único número.
     const one = (sql, ...p) => db.get(sql, ...p).n ?? 0;
     return {
@@ -19,11 +23,12 @@ export default function adminRoutes(r, { db, config, svc, hub, reminders, notesK
       patients: one("SELECT COUNT(*) n FROM users WHERE role = 'patient'"),
       pros_verified: one("SELECT COUNT(*) n FROM pros WHERE status = 'verified'"),
       plus_subscribers: one("SELECT COUNT(*) n FROM users WHERE plan = 'plus'"),
-      sessions_month: one("SELECT COUNT(*) n FROM appointments WHERE status IN ('confirmed','done') AND substr(start,1,7) = ?", month),
-      social_month: one("SELECT COUNT(*) n FROM appointments WHERE status IN ('confirmed','done') AND social = 1 AND substr(start,1,7) = ?", month),
-      gmv_month: one("SELECT COALESCE(SUM(amount),0) n FROM payments WHERE status = 'paid' AND kind = 'session' AND substr(paid_at,1,7) = ?", month),
-      revenue_month: one("SELECT COALESCE(SUM(fee),0) n FROM payments WHERE status = 'paid' AND substr(paid_at,1,7) = ?", month),
-      triages_total: one('SELECT COUNT(*) n FROM triages'),
+      sessions_month: k.sessions,
+      social_month: k.social_sessions,
+      gmv_month: k.gmv,
+      revenue_month: k.revenue,
+      // Triagens concluídas (eventos do funil, v1.3); o seed não guarda as respostas das triagens fictícias.
+      triages_total: one("SELECT COUNT(*) n FROM events WHERE kind = 'triage_done'"),
       pending: svc.listPros("p.status = 'pending'").map((p) => ({ id: p.id, name: p.name, title: p.title, reg: p.reg, area: p.area, bairro: p.bairro, is_new: p.is_new, supervisor: p.supervisor })),
       demo_mode: config.demoMode,
     };

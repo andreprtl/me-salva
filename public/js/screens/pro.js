@@ -26,7 +26,7 @@ screen('painel', {
       ${p.status === 'rejected' ? `<div class="banner warn">${ic('info')}<div><b>Não conseguimos confirmar seu registro</b><span>Confira o número em Meu perfil e fale com a equipe Me Salva.</span></div></div>` : ''}
       ${installInvite()}
       <section class="stats">
-        <div class="stat"><span>Sessões no mês</span><b>${d.sessions_month}</b><em>${diff >= 0 ? '+' : ''}${diff} vs. mesmo período do mês passado</em></div>
+        <div class="stat"><span>Sessões marcadas no mês</span><b>${d.sessions_month}</b><em>${diff >= 0 ? '+' : ''}${diff} vs. mesmo período do mês passado</em></div>
         <div class="stat"><span>Agenda ocupada</span><b>${cur.pct}%</b><em>era ${first.pct}% em ${first.month}</em></div>
         <div class="stat"><span>Avaliação média</span><b>${nota(d.rating.avg)}</b><em>${d.rating.count} avaliações</em></div>
         <div class="stat"><span>Você recebeu no mês</span><b>${brl(Math.round(d.finance.net / 100) * 100)}</b><em>já descontados 12%</em></div>
@@ -72,12 +72,13 @@ screen('proagenda', {
         <b class="num" style="width:46px">${a.start.slice(11)}</b>
         <div class="li-t"><b>${esc(a.patient_name)} ${recurTag(d.packages?.[a.package_id])}</b><span>${a.modality === 'online' ? 'Online' : 'Presencial'} · ${a.social ? 'vaga social · ' : ''}${brl2(a.pro_amount)} para você</span></div>
         ${S.proTab === 'past' ? status[a.status] || '' : ''}
-        ${S.proTab === 'up' ? `<div class="row" style="gap:6px;flex-wrap:wrap">
+        ${S.proTab === 'up' ? `<div class="appt-tools">
+          <button class="icon-btn" data-a="go" data-v="chat" data-p="${a.patient_id}" aria-label="Mensagem para ${esc(a.patient_name)}">${ic('chat')}</button>
+          <button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário de ${esc(a.patient_name)}">${ic('file')}</button>
+          <button class="icon-btn" data-a="${a.package_id ? 'proCancelPack' : 'proCancel'}" data-v="${a.id}" aria-label="Cancelar a sessão de ${esc(a.patient_name)}">${ic('x')}</button></div>
+          ${a.room_open || started(a) || S.meta.demoMode ? `<div class="appt-acts">
           ${a.room_open ? `<button class="btn btn-teal btn-sm" data-a="go" data-v="sessao" data-p="${a.id}">${ic('video')}Entrar</button>` : ''}
-          ${started(a) || S.meta.demoMode ? `<button class="btn btn-ghost btn-sm" data-a="markDone" data-v="${a.id}">${ic('check')}Realizada</button><button class="btn btn-ghost btn-sm" data-a="markNoShow" data-v="${a.id}">Falta</button>` : ''}
-          <button class="icon-btn" data-a="go" data-v="chat" data-p="${a.patient_id}" aria-label="Mensagem">${ic('chat')}</button>
-          <button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário">${ic('file')}</button>
-          <button class="icon-btn" data-a="${a.package_id ? 'proCancelPack' : 'proCancel'}" data-v="${a.id}" aria-label="Cancelar sessão">${ic('x')}</button></div>`
+          ${started(a) || S.meta.demoMode ? `<button class="btn btn-ghost btn-sm" data-a="markDone" data-v="${a.id}">${ic('check')}Realizada</button><button class="btn btn-ghost btn-sm" data-a="markNoShow" data-v="${a.id}">Falta</button>` : ''}</div>` : ''}`
         : `<button class="icon-btn" data-a="go" data-v="prontuario" data-p="${a.patient_id}" aria-label="Prontuário">${ic('file')}</button>`}
       </div>`).join('')}</div></section>`).join('')
       : `<div class="empty">${ic('cal')}<div>${S.proTab === 'up' ? 'Nenhuma sessão marcada. Confira se seus horários estão abertos.' : 'Ainda não há histórico.'}</div></div>`}</main>`;
@@ -228,11 +229,14 @@ screen('admin', {
     <section class="stats">
       <div class="stat"><span>Pacientes cadastrados</span><b>${d.patients}</b><em>${d.plus_subscribers} assinam o Me Salva+</em></div>
       <div class="stat"><span>Profissionais verificados</span><b>${d.pros_verified}</b><em>${d.pending.length} aguardando</em></div>
-      <div class="stat"><span>Sessões no mês</span><b>${d.sessions_month}</b><em>${d.social_month} vagas sociais</em></div>
-      <div class="stat"><span>Receita da plataforma (mês)</span><b>${brl(Math.round(d.revenue_month / 100) * 100)}</b><em>sobre ${brl(Math.round(d.gmv_month / 100) * 100)} em sessões</em></div>
+      <div class="stat"><span>Sessões realizadas no mês</span><b>${d.sessions_month}</b><em>${d.social_month} a preço social</em></div>
+      <div class="stat"><span>Receita da plataforma (mês)</span><b>${brl(Math.round(d.revenue_month / 100) * 100)}</b><em>sobre ${brl(Math.round(d.gmv_month / 100) * 100)} transacionados</em></div>
     </section>
+    <button class="card m-link" data-a="tab" data-v="metricas">${ic('chart')}<div class="grow"><b>Métricas do negócio</b><span class="small muted">Funil, receita, retenção, vagas sociais e qualidade, com gráficos semanais e exportação em CSV.</span></div>${ic('chevR')}</button>
     <section class="sec"><div class="sec-h"><h2 class="h2">Verificação de registros</h2><a class="link" href="https://cadastro.cfp.org.br/" target="_blank" rel="noopener">Consultar cadastro do CFP ${ic('external')}</a></div>
-      ${d.pending.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Profissional</th><th>Registro</th><th>Área</th><th>Supervisão</th><th></th></tr></thead><tbody>
+      ${d.pending.length ? `<div class="list only-m">${d.pending.map((p) => `<div class="li static" style="flex-wrap:wrap"><div class="li-t"><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.bairro)}</div><div class="small muted">${esc(p.reg)} · ${esc(S.meta.areas.find((a) => a.id === p.area)?.nome || p.area)}</div>${p.is_new ? `<div class="small muted">${esc(p.supervisor)}</div>` : ''}</div>
+        <div class="row" style="gap:6px;flex-basis:100%"><button class="btn btn-teal btn-sm" data-a="verify" data-v="${p.id}" data-d="verified">${ic('check')}Aprovar</button><button class="btn btn-ghost btn-sm" data-a="verify" data-v="${p.id}" data-d="rejected">Recusar</button></div></div>`).join('')}</div>
+      <div class="tbl-wrap only-d"><table class="tbl"><thead><tr><th>Profissional</th><th>Registro</th><th>Área</th><th>Supervisão</th><th></th></tr></thead><tbody>
         ${d.pending.map((p) => `<tr><td><b>${esc(p.name)}</b><div class="small muted">${esc(p.title)} · ${esc(p.bairro)}</div></td><td>${esc(p.reg)}</td><td>${esc(S.meta.areas.find((a) => a.id === p.area)?.nome || p.area)}</td><td class="small">${p.is_new ? esc(p.supervisor) : '—'}</td>
           <td><div class="row" style="gap:6px;justify-content:flex-end"><button class="btn btn-teal btn-sm" data-a="verify" data-v="${p.id}" data-d="verified">${ic('check')}Aprovar</button><button class="btn btn-ghost btn-sm" data-a="verify" data-v="${p.id}" data-d="rejected">Recusar</button></div></td></tr>`).join('')}
       </tbody></table></div>` : `<div class="card small muted">Nenhum cadastro aguardando verificação.</div>`}

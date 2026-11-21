@@ -61,6 +61,8 @@ export default function catalogRoutes(r, { db, config, svc }) {
     const own = req.user && req.user.id === p?.id;
     const isAdmin = req.user?.role === 'admin';
     if (!p || (p.status !== 'verified' && !own && !isAdmin)) throw new HttpError(404, 'Profissional não encontrado.');
+    // Funil (v1.3): paciente abriu o perfil de um profissional (repetições em 30 minutos contam uma vez).
+    if (req.user?.role === 'patient' && p.status === 'verified') svc.track('profile_view', { user_id: req.user.id, pro_id: p.id });
     const reviews = db.all(`SELECT id, rating, tags, text, author_label, modality, created_at FROM reviews
                             WHERE pro_id = ? AND (text <> '' OR tags <> '[]') ORDER BY created_at DESC LIMIT 20`, p.id)
       .map((r) => ({ ...r, tags: json(r.tags) }));
@@ -93,6 +95,7 @@ export default function catalogRoutes(r, { db, config, svc }) {
     const ms = Math.round((performance.now() - t0) * 10) / 10;
     if (req.user.role === 'patient') {
       db.run('INSERT INTO triages(user_id, answers, needs) VALUES (?, ?, ?)', req.user.id, JSON.stringify(answers), JSON.stringify({ ...needs, budget: Number.isFinite(needs.budget) ? needs.budget : null }));
+      svc.track('triage_done', { user_id: req.user.id }); // funil (v1.3): só o fato, sem as respostas
     }
     const byId = new Map(pros.map((p) => [p.id, p]));
     return {
